@@ -16,7 +16,7 @@
 #
 # == Common options:
 #    -v, --version                    display version number and exit.
-#    -V, --verbose                    be verbose (default).
+#    -V, --[no-]verbose               run verbosely.
 #    -h, --help                       display this help and exit.
 #
 # == AMQP server options:
@@ -134,7 +134,7 @@ Examples:
       opts.separator('Common options:')
 
       opts.on('-v', '--version', 'display version number and exit.') {output_version ; exit 0 }
-      opts.on("-V", "--[no-]verbose", "run verbosely") { |v|
+      opts.on("-V", "--[no-]verbose", "run verbosely.") { |v|
         @options.verbose = v
       }
 
@@ -165,7 +165,9 @@ Examples:
          @options.use = p
       }
 
-      opts.on('-I', '--ignore_attachments', 'don\'t parse attachments') {@options.ignore_attachments = false}
+      opts.on('-I', '--ignore_attachments', 'don\'t parse attachments') {|i|
+        @options.ignore_attachments = i
+      }
 
     }
 
