@@ -71,7 +71,7 @@ class POSTFIX_URL_Filter
 
     # Set defaults
     @options = OpenStruct.new
-    @options.verbose = false
+    @options.verbose = true
     @options.amqp_logging = false
     @options.use = 'nokogiri'
     @options.amqp_host = 'localhost'
@@ -89,7 +89,8 @@ class POSTFIX_URL_Filter
     if parsed_options?
       if arguments_valid?
 
-        puts "Start at #{DateTime.now}\n\n" if @options.verbose
+        start_time = Time.now
+        @log.info("Start at #{start_time}") if @options.verbose
 
         output_options if @options.verbose # [Optional]
 
@@ -97,12 +98,16 @@ class POSTFIX_URL_Filter
         process_email(process_standard_input)  # process email from standard input
         send_to_amqp_queue 
 
-        puts "\nFinished at #{DateTime.now}" if @options.verbose
+        finish_time = Time.now
+        if @options.verbose
+          @log.info("Finished at #{finish_time}")
+          @log.info("Ran in #{finish_time - start_time} seconds")
+        end
       else
-        puts "invalid arguments"
+        @log.error("invalid arguments")
       end
     else
-      puts "invalid options"
+      @log.error("invalid options")
     end
 
   end
@@ -174,17 +179,16 @@ Examples:
     option_parser.parse!(@arguments) rescue return false
 
     #post_process_options
-    output_options if (@options.verbose)
 
     true
   end
 
   # Dump command-line options
   def output_options
-    puts "Options:\n"
+    @log.info("Options:")
 
     @options.marshal_dump.each do |name, val|
-      puts "  #{name} = #{val}"
+      @log.info("  #{name} = #{val}")
     end
   end
 
@@ -531,13 +535,16 @@ Examples:
     #IO.read('../test/Sample_docx.msg') if (File.exists?('../test/Sample_docx.msg'))
     #IO.read('../test/Sample_odt.msg') if (File.exists?('../test/Sample_odt.msg'))
     #IO.read('../test/Sample_ppt.msg') if (File.exists?('../test/Sample_ppt.msg'))
-    #IO.read('../test/Sample_RTF.msg') if (File.exists?('../test/Sample_RTF.msg'))
+    #IO.read('../test/Sample_RTF.msg') if (File.exists?('../test/Sample_rtf.msg'))
     #IO.read('../test/Sample_doc.msg') if (File.exists?('../test/Sample_doc.msg'))
     #IO.read('../test/Sample_html.msg') if (File.exists?('../test/Sample_html.msg'))
     #IO.read('../test/Sample_pdf.msg') if (File.exists?('../test/Sample_pdf.msg'))
     #IO.read('../test/Sample_pptx.msg') if (File.exists?('../test/Sample_pptx.msg'))
-    IO.read('../test/Sample_txt.msg') if (File.exists?('../test/Sample_txt.msg'))
+    #IO.read('../test/Sample_txt.msg') if (File.exists?('../test/Sample_txt.msg'))
     #IO.read('../test/FWD_Sample_pptx.msg') if (File.exists?('../test/FWD_Sample_pptx.msg'))
+    IO.read('../test/Sample_rtf_docx_doc.msg') if (File.exists?('../test/Sample_rtf_docx_doc.msg'))
+    #IO.read('../test/Sample_rtf_docx.msg') if (File.exists?('../test/Sample_rtf_docx.msg'))
+    #IO.read('../test/Sample_no_attachment.msg') if (File.exists?('../test/Sample_no_attachment.msg'))
 
   end
 end
