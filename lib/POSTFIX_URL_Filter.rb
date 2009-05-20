@@ -247,7 +247,7 @@ Examples:
 
         get_links(doc)
 
-      elsif ((header['Content-Type'].downcase.include? 'text/plain') && (header.has_key?('Content-Transfer-Encoding')) && (!@options.dont_parse_attachments))
+      elsif ((header.has_key?('Content-Transfer-Encoding')) && (!@options.dont_parse_attachments))
 
         @log.debug('message has an attachment...')
 
@@ -515,8 +515,8 @@ Examples:
     #IO.read('../test/Sample_html.msg') if (File.exists?('../test/Sample_html.msg'))
     #IO.read('../test/Sample_pdf.msg') if (File.exists?('../test/Sample_pdf.msg'))
     #IO.read('../test/Sample_pptx.msg') if (File.exists?('../test/Sample_pptx.msg'))
-    IO.read('../test/Sample_txt.msg') if (File.exists?('../test/Sample_txt.msg'))
-
+    #IO.read('../test/Sample_txt.msg') if (File.exists?('../test/Sample_txt.msg'))
+    IO.read('../test/FWD_Sample_pptx.msg') if (File.exists?('../test/FWD_Sample_pptx.msg'))
 
   end
 end
