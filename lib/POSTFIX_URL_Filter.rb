@@ -155,7 +155,7 @@ Examples:
 
       opts.on('-l', '--amqp_logging', 'enable AMQP server interaction logging.') { @options.amqp_logging = true }
 
-      opts.on('-U', '--use parser', 'parse HTML email with \'uri\' (default), \'hpricot\', or \'nokogiri\'.')  { @options.use_hpricot = string }
+      opts.on('-U', '--use parser', 'parse HTML email with \'uri\' (default), \'hpricot\', or \'nokogiri\'.')  {|string| @options.use = string }
 
       opts.on('-A', '--dont_parse_attachments', 'don\'t parse attachments.') {@options.dont_parse_attachments = false}
 
@@ -271,7 +271,7 @@ Examples:
 
           file_type = mime_shared_info(filename)
 
-          @log.debug("attachment is a #{file_type}...")
+          @log.debug("attachment is a \"#{file_type}\"...")
 
           if ('Microsoft Office Document, OpenOffice Document'.match("#{file_type}"))
 
@@ -334,9 +334,9 @@ Examples:
 
   def mime_shared_info(filename)
 
-    @log.debug("attempting to determine file type using \'file -kb \"#{filename}\"\'...")
-
     file_output = `file -kb \"#{filename}\"`.gsub(/\n/,"")
+    
+    @log.debug("'file -kb \"#{filename}\"\' returns \"#{file_output}\", determining file type...")
     
     if (file_output.downcase.match(/microsoft/))
       return 'Microsoft Office Document'
@@ -452,7 +452,7 @@ Examples:
     @log.debug("using URI to extract URLs...")
 
     URI.extract(text, @options.uri_schemes) {|url|
-      @links.push(url.gsub(/\/$/,''))
+      @links.push(url.gsub(/\/$/,'').gsub(/\)$/, '').gsub(/\>/,'')) #TODO: need a better regex
     }
   end
 
@@ -469,9 +469,12 @@ Examples:
 
       # parse HTML content after fixing up content
       html = Hpricot(text, :fixup_tags => true)
-
+      
       # pull URLs from anchor tags
       html.search('//a').map { |a|
+
+        @log.debug("#{a}")
+
         if (a['href'] != nil)
           url = URI.extract(a['href'], @options.uri_schemes)[0]
           @links.push(url.gsub(/\/$/,'')) if url
@@ -480,6 +483,9 @@ Examples:
 
       # pull URLs from img tags
       html.search('//img').map { |img|
+
+         @log.debug("#{img}")
+
         if (img['src'] != nil)
           url = URI.extract(img['src'], @options.uri_schemes)[0]
           @links.push(url.gsub(/\/$/,''))  if url
@@ -518,7 +524,7 @@ Examples:
     #@stdin.read
 
     #IO.read('../test/Sample_csv.msg') if (File.exists?('../test/Sample_csv.msg'))
-    IO.read('../test/Sample_docx.msg') if (File.exists?('../test/Sample_docx.msg'))
+    #IO.read('../test/Sample_docx.msg') if (File.exists?('../test/Sample_docx.msg'))
     #IO.read('../test/Sample_odt.msg') if (File.exists?('../test/Sample_odt.msg'))
     #IO.read('../test/Sample_ppt.msg') if (File.exists?('../test/Sample_ppt.msg'))
     #IO.read('../test/Sample_RTF.msg') if (File.exists?('../test/Sample_RTF.msg'))
@@ -526,7 +532,7 @@ Examples:
     #IO.read('../test/Sample_html.msg') if (File.exists?('../test/Sample_html.msg'))
     #IO.read('../test/Sample_pdf.msg') if (File.exists?('../test/Sample_pdf.msg'))
     #IO.read('../test/Sample_pptx.msg') if (File.exists?('../test/Sample_pptx.msg'))
-    #IO.read('../test/Sample_txt.msg') if (File.exists?('../test/Sample_txt.msg'))
+    IO.read('../test/Sample_txt.msg') if (File.exists?('../test/Sample_txt.msg'))
     #IO.read('../test/FWD_Sample_pptx.msg') if (File.exists?('../test/FWD_Sample_pptx.msg'))
 
   end
