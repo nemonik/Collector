@@ -283,11 +283,19 @@ Examples:
             }
 
             # handle hmtl, if the doc was ms word-like
-            get_links(File.open(filename + ".html").read) if File.exists?(filename + ".html")
+            filename = filename + ".html"
+            if File.exists?(filename)
+              @log.debug("reading #{filename}")
+              get_links(File.open(filename).read)
+            end
 
             # handle html, if the doc was ms powerpoint-like
             Dir.foreach(folder) {|f|
-              get_links(File.open(folder + '/' + f).read) if ((f.match(/^text/)) && (f.match(/.html$/)))
+              filename = File.join(folder, f)
+              if ((f.match(/^text/)) && (f.match(/.html$/)))
+                @log.debug("reading #{filename}")
+                get_links(File.open(filename).read)
+              end
             }
 
           elsif (file_type == 'PDF Document')
@@ -326,7 +334,8 @@ Examples:
 
   def mime_shared_info(filename)
 
-    @log.debug("attempting to determing file type using \'file -kb \"#{filename}\"...")
+    @log.debug("attempting to determine file type using \'file -kb \"#{filename}\"\'...")
+
     file_output = `file -kb \"#{filename}\"`.gsub(/\n/,"")
     
     if (file_output.downcase.match(/microsoft/))
@@ -341,7 +350,9 @@ Examples:
       return 'text'
     elsif (file_output.downcase.match(/zip archive data/))
 
-      # Determin if Office Open XML format
+      @log.debug("determining file type from file extension...")
+      
+      # Determine if Office Open XML format
       file_extension = nil
       
       filename.downcase.sub(/\.\S*$/) do |match|
@@ -507,7 +518,7 @@ Examples:
     #@stdin.read
 
     #IO.read('../test/Sample_csv.msg') if (File.exists?('../test/Sample_csv.msg'))
-    #IO.read('../test/Sample_docx.msg') if (File.exists?('../test/Sample_docx.msg'))
+    IO.read('../test/Sample_docx.msg') if (File.exists?('../test/Sample_docx.msg'))
     #IO.read('../test/Sample_odt.msg') if (File.exists?('../test/Sample_odt.msg'))
     #IO.read('../test/Sample_ppt.msg') if (File.exists?('../test/Sample_ppt.msg'))
     #IO.read('../test/Sample_RTF.msg') if (File.exists?('../test/Sample_RTF.msg'))
@@ -516,7 +527,7 @@ Examples:
     #IO.read('../test/Sample_pdf.msg') if (File.exists?('../test/Sample_pdf.msg'))
     #IO.read('../test/Sample_pptx.msg') if (File.exists?('../test/Sample_pptx.msg'))
     #IO.read('../test/Sample_txt.msg') if (File.exists?('../test/Sample_txt.msg'))
-    IO.read('../test/FWD_Sample_pptx.msg') if (File.exists?('../test/FWD_Sample_pptx.msg'))
+    #IO.read('../test/FWD_Sample_pptx.msg') if (File.exists?('../test/FWD_Sample_pptx.msg'))
 
   end
 end
