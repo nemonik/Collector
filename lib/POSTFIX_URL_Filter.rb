@@ -17,7 +17,7 @@
 # == Common options:
 #    -v, --version                    display version number and exit.
 #    -V, --verbose                    be verbose (default).
-#    -q, --quiet                      quiet (no output).
+#    -h, --help                       display this help and exit.
 #
 # == AMQP server options:
 #    -H, --host HOST                  set host to HOST
@@ -26,10 +26,9 @@
 #    -p, --password PASSWORD          set password to PASSWORD.
 #
 # == Actions:
-#    -l, --amqp_logging               enable AMQP server interaction logging.
-#    -U, --use parser                 parse HTML email with 'uri' (default), 'hpricot', or 'nokogiri'.
-#    -h, --help                       display this help and exit.
-#    -A, --dont_parse_attachments     don't URL parse attachments.
+#    -l, --[no-]amqp_logging          enable AMQP server interaction logging.
+#        --use [PARSER]               select PARSER for HTML/XML (uri, hpricot, nokogiri)
+#    -I, --ingore_attachments         ignore attachments, don't parse them.
 #
 # == Author
 #   Michael Joseph Walsh
@@ -72,8 +71,7 @@ class POSTFIX_URL_Filter
 
     # Set defaults
     @options = OpenStruct.new
-    @options.verbose = true
-    @options.quiet = false
+    @options.verbose = false
     @options.amqp_logging = false
     @options.use = 'nokogiri'
     @options.amqp_host = 'localhost'
@@ -82,7 +80,7 @@ class POSTFIX_URL_Filter
     @options.amqp_password = 'guest'
     @options.tmp_folder_for_attachments = "/home/walsh/tmp"
     @options.uri_schemes = ['http', 'https', 'ftp', 'ftps']
-    @options.dont_parse_attachments = false
+    @options.ignore_attachments = false
   end
 
   # Parse options, check arguments, then process the email
@@ -114,7 +112,7 @@ class POSTFIX_URL_Filter
   def parsed_options?
 
     # Specify options
-    option_parser = OptionParser.new do |opts|
+    option_parser = OptionParser.new { |opts|
 
       opts.banner = "Usage:  #$0 [options] AMQP_queue"
 
@@ -136,8 +134,14 @@ Examples:
       opts.separator('Common options:')
 
       opts.on('-v', '--version', 'display version number and exit.') {output_version ; exit 0 }
-      opts.on('-V', '--verbose', 'be verbose. (default)') { @options.verbose = true }
-      opts.on('-q', '--quiet', 'quiet (no output).') { @options.quiet = false}
+      opts.on("-V", "--[no-]verbose", "run verbosely") { |v|
+        @options.verbose = v
+      }
+
+      opts.on('-h', '--help', 'display this help and exit.') do
+        puts opts
+        exit
+      end
 
       opts.separator('')
       opts.separator('AMQP server options:')
@@ -153,22 +157,22 @@ Examples:
       opts.separator('')
       opts.separator('Actions:');
 
-      opts.on('-l', '--amqp_logging', 'enable AMQP server interaction logging.') { @options.amqp_logging = true }
+      opts.on('-l', '--[no-]amqp_logging', 'enable AMQP server interaction logging.') { |l|
+        @options.amqp_logging = l
+      }
 
-      opts.on('-U', '--use parser', 'parse HTML email with \'uri\' (default), \'hpricot\', or \'nokogiri\'.')  {|string| @options.use = string }
+      opts.on("--use [PARSER]", [:uri, :hpricot, :nokogiri], "select PARSER for HTML/XML (uri, hpricot, nokogiri)") { |p|
+         @options.use = p
+      }
 
-      opts.on('-A', '--dont_parse_attachments', 'don\'t parse attachments.') {@options.dont_parse_attachments = false}
+      opts.on('-I', '--ignore_attachments', 'don\'t parse attachments') {@options.ignore_attachments = false}
 
-      opts.on_tail('-h', '--help', 'display this help and exit.') do
-        puts opts
-        exit
-      end
-
-    end
+    }
 
     option_parser.parse!(@arguments) rescue return false
 
     #post_process_options
+    output_options if (@options.verbose)
 
     true
   end
@@ -184,8 +188,6 @@ Examples:
 
   # Performs post-parse processing on options
   def process_options
-
-    @options.verbose = false if @options.quiet
 
   end
 
@@ -236,18 +238,18 @@ Examples:
 
       @log.debug('====================')
 
-      if ((header['Content-Type'].downcase.include? 'text/plain') && (!header.has_key?('Content-Transfer-Encoding')))
+      if ((header['Content-Type'].downcase.include? 'text/plain') && (!header.has_key?('Content-Disposition')))
 
         @log.debug('handling plain text part...')
 
         get_links_with_uri(doc)
 
-      elsif ((header['Content-Type'].downcase.include? 'text/html') && (!header.has_key?('Content-Transfer-Encoding')))
+      elsif ((header['Content-Type'].downcase.include? 'text/html') && (!header.has_key?('Content-Disposition')))
         @log.debug('handling html part...')
 
         get_links(doc)
 
-      elsif ((header.has_key?('Content-Transfer-Encoding')) && (!@options.dont_parse_attachments))
+      elsif ((header.has_key?('Content-Disposition')) && (header['Content-Disposition'].downcase.include? 'attachment') && (!@options.ignore_attachments))
 
         @log.debug('message has an attachment...')
 
