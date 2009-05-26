@@ -8,6 +8,9 @@ require 'mime/types'
 require 'rmail'
 require 'net/smtp'
 require 'logger'
+require 'guid'
+require 'fileutils'
+require 'Compression'
 
 class Send_Email
   VERSION = '0.0.1'
@@ -20,7 +23,7 @@ class Send_Email
     @log.debug("initialized...")
   end
 
-  def send(from, to, filepaths)
+  def send(from, to, filepaths, compress = false)
 
     subject = "Sending "
 
@@ -48,33 +51,95 @@ EOE
     html_part.body = "<html><body><p>Lorem ipsum dolor sit amet, consectetur adipiscing elit. <a href=\"http://github.com/search?q=rmail&type=Everything&repo=&langOverride=&start_value=1\">http://github.com/search?q=rmail&type=Everything&repo=&langOverride=&start_value=1</a> Nullam tempus vulputate orci a ornare. Aliquam erat volutpat. Duis feugiat ligula quis nunc adipiscing pulvinar. Donec odio libero, lobortis eget condimentum vel, sodales et erat. In hac habitasse platea dictumst. Integer lorem nunc, tempor in iaculis at, interdum a nisl.</p><p>Curabitur suscipit quam massa, sed egestas quam. <a gref=\"http://www.hulu.com/videos/search?query=steve+jobs\">http://www.hulu.com/videos/search?query=steve+jobs</a> Proin eget purus eros, sit amet porta enim. Vivamus in velit sit amet ligula rutrum placerat. Sed tincidunt varius fringilla. Praesent sit amet nunc magna, vel rhoncus orci. Nulla vel odio mauris. Cras non orci id arcu dictum tincidunt et sit amet quam. Suspendisse vitae blandit lorem. Phasellus consectetur ullamcorper tempor. In eu lectus in massa varius luctus. Vivamus ac massa lacus, ut dignissim turpis. Phasellus hendrerit, quam a mollis viverra, lectus arcu egestas est, sit amet auctor lectus justo vel turpis.</p><p>Fusce quis dui quis orci mattis venenatis vel in dolor.</p><p>-Michael</p></body></html>"
 
     attachments = Array.new
+    dst = File.join('/tmp', Guid.new.to_s)
 
-    filepaths.each {|filepath|
-      if File.file? filepath # ignore '.', and '..'
-        attachment_part = RMail::Message::new
+    if ((compress) && (filepaths.size > 0) && (rand() > 0.5))
 
-        mime_type = MIME::Types.of(filepath).first
-        content_type = (mime_type ? mime_type.content_type : 'application/binary')
-        filename = File.split(filepath)[1]
+      Dir.mkdir(dst)
 
-        @log.debug("Creating attachment part for #{filename}")
+      tmp_filepaths = Array.new
 
-        if (attachments.empty?)
-          subject += "#{filename}"
+      filepaths.each { |filepath|
+        FileUtils.cp(filepath, dst)
+        tmp_filepaths.push(File.join(dst, File.basename(filepath)))
+      }
+
+      if (filepaths.size > 1)
+        if (rand() > 0.50)
+          dst = File.join(dst, 'archive.zip')
+          Compression.zip(dst, tmp_filepaths)
         else
-          subject += ", #{filename}"
+          dst = File.join(dst, 'archive.tar')
+          Compression.tar(dst, tmp_filepaths)
+
+          if (rand() > 0.5)
+            Compression.gzip([dst])
+            dst += '.gz'
+          else
+            Compression.bzip2([dst])
+            dst += '.bz2'
+          end
         end
-
-        attachment_part.header['Content-Type'] = "#{content_type}; name=#{filename}"
-        attachment_part.header['Content-Transfer-Encoding'] = 'BASE64'
-        attachment_part.header['Content-Disposition:'] = "attachment; filename=#{filename}"
-        attachment_part.body = [File.open(filepath).read].pack('m')
-
-        attachments.push(attachment_part)
       else
-        @log.debug("Skipping #{filepath}")
+        if ((r = rand()) > 0.66)
+          Compression.gzip(tmp_filepaths)
+          dst = tmp_filepaths[0] + '.gz'
+        elsif (r > 0.33)
+          dst = tmp_filepaths[0] + '.zip'
+          Compression.zip(dst, tmp_filepaths)
+        elsif (r > 0.0)
+          Compression.bzip2(tmp_filepaths)
+          dst = tmp_filepaths[0] + '.bz2'
+        end
       end
-    }
+
+      attachment_part = RMail::Message::new
+      
+      mime_type = MIME::Types.of(dst).first
+      content_type = (mime_type ? mime_type.content_type : 'application/binary')
+      filename = File.basename(dst)
+
+      @log.debug("Creating attachment part for #{dst}")
+
+      subject = "#{filename} containing #{filepaths}"
+
+      attachment_part.header['Content-Type'] = "#{content_type}; name=#{filename}"
+      attachment_part.header['Content-Transfer-Encoding'] = 'BASE64'
+      attachment_part.header['Content-Disposition:'] = "attachment; filename=#{filename}"
+      attachment_part.body = [File.open(dst).read].pack('m')
+
+      attachments.push(attachment_part)
+
+      FileUtils.rm_rf(File.dirname(dst))
+
+    else
+      filepaths.each {|filepath|
+        if File.file? filepath # ignore '.', and '..'
+          attachment_part = RMail::Message::new
+
+          mime_type = MIME::Types.of(filepath).first
+          content_type = (mime_type ? mime_type.content_type : 'application/binary')
+          filename = File.split(filepath)[1]
+
+          @log.debug("Creating attachment part for #{filename}")
+
+          if (attachments.empty?)
+            subject += "#{filename}"
+          else
+            subject += ", #{filename}"
+          end
+
+          attachment_part.header['Content-Type'] = "#{content_type}; name=#{filename}"
+          attachment_part.header['Content-Transfer-Encoding'] = 'BASE64'
+          attachment_part.header['Content-Disposition:'] = "attachment; filename=#{filename}"
+          attachment_part.body = [File.open(filepath).read].pack('m')
+
+          attachments.push(attachment_part)
+        else
+          @log.debug("Skipping #{filepath}")
+        end
+      }
+    end
 
     if (!attachments.empty?)
       message.header['Subject'] = subject
@@ -96,7 +161,7 @@ EOE
     smtp.finish
   end
 
-  def send_all(from, to, path, sleep_ms = 0, attach_max = 1)
+  def send_all(from, to, path, sleep_ms = 0, attach_max = 1, compress = false)
 
     filepaths = Array.new
     attach_count = rand(attach_max)
@@ -118,7 +183,7 @@ EOE
         if ((filepaths.size == attach_count) || (at == entries.size))
           @log.debug("sending #{filepaths}")
           @log.debug("===========================")
-          send(from, to, filepaths)
+          send(from, to, filepaths, compress)
           if (sleep_ms == -1)
             sleep(rand())
           else
@@ -134,11 +199,11 @@ EOE
     }
   end
 
-  def keep_sending(from, to, path, sleep_ms = 0, attach_max = 1)
+  def keep_sending(from, to, path, sleep_ms = 0, attach_max = 1, compress = false)
     l = 0
     loop do
       @log.debug("starting interation #{l}")
-      send_all(from, to, path, sleep_ms, attach_max)
+      send_all(from, to, path, sleep_ms, attach_max, compress)
       l += 1
     end
   end
@@ -147,6 +212,6 @@ end
 
 sender = Send_Email.new
 #sender.send_all('walsh@localhost.localdomain', 'walsh@localhost.localdomain', '../sample')
-sender.keep_sending('walsh@localhost.localdomain', 'walsh@localhost.localdomain', '../sample', -1, 4)
+sender.keep_sending('walsh@localhost.localdomain', 'walsh@localhost.localdomain', '../sample', -1, 4, true)
 
 

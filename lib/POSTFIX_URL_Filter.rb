@@ -50,8 +50,7 @@ require 'json'
 require 'fileutils'
 require 'socket'
 require 'logger'
-
-
+require 'Compression'
 
 class POSTFIX_URL_Filter
   VERSION = '0.0.1'
@@ -263,65 +262,22 @@ Examples:
 
           @log.debug("handling base64 attachment...")
 
-          # create unique directory to holder file to allow for easy cleanup
-          folder = @options.tmp_folder_for_attachments + "/" + Guid.new.to_s
-          Dir.mkdir(folder)
+          # create unique directory to hold the file for processing, and allow for easy cleanup
+          folder_name = @options.tmp_folder_for_attachments + "/" + Guid.new.to_s
+          Dir.mkdir(folder_name)
 
-          filename = File.join(folder, header['Content-Type'].chomp.split(/;\s*/)[1].split(/\s*=\s*/)[1].gsub(/\"/, ""))
+          file_name = File.join(folder_name, header['Content-Type'].chomp.split(/;\s*/)[1].split(/\s*=\s*/)[1].gsub(/\"/, ""))
 
-          @log.debug("writing file #{filename}...")
-
-          file = File.new(filename, 'w')
+          file = File.new(file_name, 'w')
 
           file.syswrite(doc.unpack("m")[0]) # base64 decode and write out
 
           file.close
 
-          file_type = mime_shared_info(filename)
-
-          @log.debug("attachment is a \"#{file_type}\"...")
-
-          if ('Microsoft Office Document, OpenOffice Document'.match("#{file_type}"))
-
-            # TODO: Handle Excel documents.
-
-            # run open office converter macro
-            IO.popen("/usr/lib64/openoffice.org3/program/soffice -invisible \"macro:///HoneyClient.Conversion.ConvertToHTML(#{filename})\"") { |io|
-              puts '|' + io.read + '|'
-            }
-
-            # handle hmtl, if the doc was ms word-like
-            filename = filename + ".html"
-            if File.exists?(filename)
-              @log.debug("reading #{filename}")
-              get_links(File.open(filename).read)
-            end
-
-            # handle html, if the doc was ms powerpoint-like
-            Dir.foreach(folder) {|f|
-              filename = File.join(folder, f)
-              if ((f.match(/^text/)) && (f.match(/.html$/)))
-                @log.debug("reading #{filename}")
-                get_links(File.open(filename).read)
-              end
-            }
-
-          elsif (file_type == 'PDF Document')
-            get_links_with_uri(`pdftotext #{filename} /dev/stdout`)
-          elsif (file_type == 'text')
-            get_links_with_uri(File.open(filename).read)
-          elsif (file_type == 'XML document')
-            get_links(File.open(filename).read)
-          elsif (file_type == 'Zip archive')
-            # TODO: need to handle
-          elsif (file_type == 'gzip compressed data')
-            # TODO: need to handle
-          elsif (file_type == 'tar archive')
-            # TODO: need to handle
-          end
+          process_file(file_name)
 
           # clean up temp files
-          FileUtils.rm_rf(folder)
+          FileUtils.rm_rf(folder_name)
         else
           @log.warn("Unhandled content-transfer-encoding #{header['Content-Transfer-Encoding']}")
         end
@@ -340,11 +296,70 @@ Examples:
     } if (message.multipart?)
   end
 
-  def mime_shared_info(filename)
+  def process_file(file_name)
 
-    file_output = `file -kb \"#{filename}\"`.gsub(/\n/,"")
+    @log.debug("writing file #{file_name}...")
+
+    file_type = mime_shared_info(file_name)
+
+    @log.debug("file is  \"#{file_type}\"...")
+
+    if ('Microsoft Office Document, OpenOffice Document'.match("#{file_type}"))
+      get_links_from_office_doc(file_name)
+    elsif (file_type == 'PDF Document')
+      get_links_with_uri(`pdftotext #{file_name} /dev/stdout`)
+    elsif (file_type == 'text')
+      get_links_with_uri(File.open(file_name).read)
+    elsif (file_type == 'XML document')
+      get_links(File.open(file_name).read)
+    elsif (file_type == 'Zip archive')
+      process_compressed(file_name, 'zip')
+    elsif (file_type == 'gzip compressed data')
+      process_compressed(file_name, 'gzip')
+    elsif (file_type == 'bzip2 compressed data')
+      process_compressed(file_name, 'bzip2')
+    elsif (file_type == 'tar archive')
+      process_compressed(file_name, 'tart')
+    end
+  end
+
+  def process_compressed(file_name, compression)
+
+    @log.debug("processing #{compression} compressed #{file_name}...")
+
+    dst = File.join(File.dirname(file_name), Guid.new.to_s)
+    Dir.new(dst)
+    FileUtils.cp(file_name, dst)
+
+    tmp_file_name = File.join(dst, File.basename(file_name))
+
+    if (compression == 'zip')
+      Compression.unzip(tmp_file_name, dst)
+    elsif (compression == 'gzip')
+      Compression.gunzip(tmp_file_name)
+    elsif (compression == 'bzip2')
+      Compression.bunzip2(tmp_file_name)
+    elsif (compression == 'tar')
+      Compression.untar(tmp_file_name, dst)
+    else
+      @log.error("#{compression} unhandled form of compression")
+    end
+
+    FileUtils.rm(tmp_file_name)
+
+    Dir.foreach(dst) { |file_name|
+      file_name = File.join(dst, file_name)
+
+      process_file(file_name) if file_name.file?
+    }
+
+  end
+
+  def mime_shared_info(file_name)
+
+    file_output = `file -kb \"#{file_name}\"`.gsub(/\n/,"")
     
-    @log.debug("'file -kb \"#{filename}\"\' returns \"#{file_output}\", determining file type...")
+    @log.debug("'file -kb \"#{file_name}\"\' returns \"#{file_output}\", determining file type...")
     
     if (file_output.downcase.match(/microsoft/))
       return 'Microsoft Office Document'
@@ -361,14 +376,7 @@ Examples:
       @log.debug("determining file type from file extension...")
       
       # Determine if Office Open XML format
-      file_extension = nil
-      
-      filename.downcase.sub(/\.\S*$/) do |match|
-          file_extension = match
-          break
-      end
-
-      if (".pptx, .docx, .xlsx".match(file_extension))
+      if (".pptx, .docx, .xlsx".match(File.extname(file_name)))
         return 'Microsoft Office Document'
       else
         return 'Zip archive'
@@ -378,16 +386,44 @@ Examples:
       return 'gzip compressed data'
     elsif (file_output.downcase.match(/tar archive/))
       return 'tar archive'
+    elsif (file_output.downcase.match(/bzip2 compressed data/))
+      return 'bzip2 compressed data'
     end
+  end
+
+  def get_links_from_office_doc(file_name)
+    # TODO: Handle Excel documents.
+
+    # run open office converter macro
+    IO.popen("/usr/lib64/openoffice.org3/program/soffice -invisible \"macro:///HoneyClient.Conversion.ConvertToHTML(#{file_name})\"") { |io|
+      @log.info("#{io.read}")  # shouldn't really return anything
+    }
+
+    # handle hmtl, if the doc was ms word-like
+    file_name = file_name + ".html"
+    if File.exists?(file_name)
+      @log.debug("reading #{file_name}")
+      get_links(File.open(file_name).read)
+    end
+
+    # handle html, if the doc was ms powerpoint-like
+    folder_name = File.dirname(file_name)
+    Dir.foreach(folder_name) {|f|
+      file_name = File.join(folder_name, f)
+      if ((f.match(/^text/)) && (f.match(/.html$/)))
+        @log.debug("reading #{file_name}")
+        get_links(File.open(file_name).read)
+      end
+    }
   end
 
   # send off to AMQP queue
   def send_to_amqp_queue
 
     # strip off dupes
+    @log.debug("URL count before compact #{@links.size}")
     @links = @links.uniq.compact
-
-    @log.debug("Sending #{@links} to amqp server...")
+    @log.debug("Sending #{@links.size} links to amqp server #{@links}...")
 
     time = Time.new
 
@@ -439,9 +475,6 @@ Examples:
       # todo: need to set send to a exchange, using a routing a key...
       AMQP.stop { EM.stop }
     end
-
-    #pp "sent"
-
   end
 
   # select the method to parse out URLs
