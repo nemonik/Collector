@@ -1,8 +1,6 @@
-# == Author
-#   Michael Joseph Walsh
-#
-# == Copyright
-#   Copyright (c) 2009 The MITRE Corporation.  All Rights Reserved.
+# Author::    Michael Joseph Walsh (mailto:mjwalsh@mitre.org)
+# Copyright:: Copyright (c) 2009 The MITRE Corporation.  All Rights Reserved.
+# License::
 
 require 'mime/types'
 require 'rmail'

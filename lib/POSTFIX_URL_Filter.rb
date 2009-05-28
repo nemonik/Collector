@@ -30,11 +30,9 @@
 #        --use [PARSER]               select PARSER for HTML/XML (uri, hpricot, nokogiri)
 #    -I, --ingore_attachments         ignore attachments, don't parse them.
 #
-# == Author
-#   Michael Joseph Walsh
-#
-# == Copyright
-#   Copyright (c) 2009 The MITRE Corporation.  All Rights Reserved.
+# Author::    Michael Joseph Walsh (mailto:mjwalsh@mitre.org)
+# Copyright:: Copyright (c) 2009 The MITRE Corporation.  All Rights Reserved.
+# License::
 
 require 'optparse'
 require 'ostruct'
@@ -399,6 +397,7 @@ Examples:
 
     # handle hmtl, if the doc was ms word-like
     file_name = file_name + ".html"
+
     if File.exists?(file_name)
       @log.debug("reading #{file_name}")
       get_links(File.open(file_name).read)
@@ -565,7 +564,7 @@ Examples:
     #IO.read('../test/Sample_csv.msg') if (File.exists?('../test/Sample_csv.msg'))
     #IO.read('../test/Sample_docx.msg') if (File.exists?('../test/Sample_docx.msg'))
     #IO.read('../test/Sample_odt.msg') if (File.exists?('../test/Sample_odt.msg'))
-    #IO.read('../test/Sample_ppt.msg') if (File.exists?('../test/Sample_ppt.msg'))
+    IO.read('../test/Sample_ppt.msg') if (File.exists?('../test/Sample_ppt.msg'))
     #IO.read('../test/Sample_RTF.msg') if (File.exists?('../test/Sample_rtf.msg'))
     #IO.read('../test/Sample_doc.msg') if (File.exists?('../test/Sample_doc.msg'))
     #IO.read('../test/Sample_html.msg') if (File.exists?('../test/Sample_html.msg'))
@@ -577,7 +576,8 @@ Examples:
     #IO.read('../test/Sample_rtf_docx.msg') if (File.exists?('../test/Sample_rtf_docx.msg'))
     #IO.read('../test/Sample_no_attachment.msg') if (File.exists?('../test/Sample_no_attachment.msg'))
     #IO.read('../test/Sample_archive_tar_bz2.msg') if (File.exists?('../test/Sample_archive_tar_bz2.msg'))
-    IO.read('../test/Sample_archive_tar_gz.msg') if (File.exists?('../test/Sample_archive_tar_gz.msg'))
+    #IO.read('../test/Sample_archive_tar_gz.msg') if (File.exists?('../test/Sample_archive_tar_gz.msg'))
+    #IO.read('../test/Sample_archive_zip.msg') if (File.exists?('../test/Sample_archive_zip.msg'))
 
   end
 end
