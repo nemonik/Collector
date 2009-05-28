@@ -1,0 +1,70 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+<head>
+  <title>parsed_options? (POSTFIX_URL_Filter)</title>
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+  <link rel="stylesheet" href="../.././rdoc-style.css" type="text/css" media="screen" />
+</head>
+<body class="standalone-code">
+  <pre><span class="ruby-comment cmt"># File POSTFIX_URL_Filter.rb, line 119</span>
+  <span class="ruby-keyword kw">def</span> <span class="ruby-identifier">parsed_options?</span>
+
+    <span class="ruby-comment cmt"># Specify options</span>
+    <span class="ruby-identifier">option_parser</span> = <span class="ruby-constant">OptionParser</span>.<span class="ruby-identifier">new</span> { <span class="ruby-operator">|</span><span class="ruby-identifier">opts</span><span class="ruby-operator">|</span>
+
+      <span class="ruby-identifier">opts</span>.<span class="ruby-identifier">banner</span> = <span class="ruby-value str">&quot;Usage:  #$0 [options] AMQP_queue&quot;</span>
+
+      <span class="ruby-identifier">explanation</span> = <span class="ruby-value str">&quot;\nA POSTFIX script that filters email for URLs and sends the URLs off to\nRabbitMQ queue to be later processed.\n\n\nExamples:\ncat email.eml &gt; main.rb\ncat email.eml &gt; main.rb jobs\ncat email.eml &gt; main.rb --host localhost --port 5672 --user quest --password quest jobs\n&quot;</span>
+
+      <span class="ruby-identifier">opts</span>.<span class="ruby-identifier">separator</span>(<span class="ruby-identifier">explanation</span>)
+
+      <span class="ruby-identifier">opts</span>.<span class="ruby-identifier">separator</span>(<span class="ruby-value str">''</span>)
+      <span class="ruby-identifier">opts</span>.<span class="ruby-identifier">separator</span>(<span class="ruby-value str">'Common options:'</span>)
+
+      <span class="ruby-identifier">opts</span>.<span class="ruby-identifier">on</span>(<span class="ruby-value str">'-v'</span>, <span class="ruby-value str">'--version'</span>, <span class="ruby-value str">'display version number and exit.'</span>) {<span class="ruby-identifier">output_version</span> ; <span class="ruby-identifier">exit</span> <span class="ruby-value">0</span> }
+      <span class="ruby-identifier">opts</span>.<span class="ruby-identifier">on</span>(<span class="ruby-value str">&quot;-V&quot;</span>, <span class="ruby-value str">&quot;--[no-]verbose&quot;</span>, <span class="ruby-value str">&quot;run verbosely.&quot;</span>) { <span class="ruby-operator">|</span><span class="ruby-identifier">v</span><span class="ruby-operator">|</span>
+        <span class="ruby-ivar">@options</span>.<span class="ruby-identifier">verbose</span> = <span class="ruby-identifier">v</span>
+      }
+
+      <span class="ruby-identifier">opts</span>.<span class="ruby-identifier">on</span>(<span class="ruby-value str">'-h'</span>, <span class="ruby-value str">'--help'</span>, <span class="ruby-value str">'display this help and exit.'</span>) <span class="ruby-keyword kw">do</span>
+        <span class="ruby-identifier">puts</span> <span class="ruby-identifier">opts</span>
+        <span class="ruby-identifier">exit</span>
+      <span class="ruby-keyword kw">end</span>
+
+      <span class="ruby-identifier">opts</span>.<span class="ruby-identifier">separator</span>(<span class="ruby-value str">''</span>)
+      <span class="ruby-identifier">opts</span>.<span class="ruby-identifier">separator</span>(<span class="ruby-value str">'AMQP server options:'</span>)
+
+      <span class="ruby-identifier">opts</span>.<span class="ruby-identifier">on</span>(<span class="ruby-value str">'-H'</span>, <span class="ruby-value str">'--host HOST'</span>, <span class="ruby-value str">'set host to HOST'</span>) { <span class="ruby-operator">|</span><span class="ruby-identifier">string</span><span class="ruby-operator">|</span> <span class="ruby-ivar">@options</span>.<span class="ruby-identifier">amqp_host</span> = <span class="ruby-identifier">string</span> }
+
+      <span class="ruby-identifier">opts</span>.<span class="ruby-identifier">on</span>(<span class="ruby-value str">'-P'</span>, <span class="ruby-value str">'--port PORT'</span>, <span class="ruby-value str">'set port to PORT'</span>) { <span class="ruby-operator">|</span><span class="ruby-identifier">string</span><span class="ruby-operator">|</span> <span class="ruby-ivar">@options</span>.<span class="ruby-identifier">amqp_port</span> = <span class="ruby-identifier">string</span> }
+
+      <span class="ruby-identifier">opts</span>.<span class="ruby-identifier">on</span>(<span class="ruby-value str">'-u'</span>, <span class="ruby-value str">'--user USER'</span>, <span class="ruby-value str">'set login to USER.'</span>) { <span class="ruby-operator">|</span><span class="ruby-identifier">string</span><span class="ruby-operator">|</span> <span class="ruby-ivar">@options</span>.<span class="ruby-identifier">user</span> = <span class="ruby-identifier">string</span> }
+
+      <span class="ruby-identifier">opts</span>.<span class="ruby-identifier">on</span>(<span class="ruby-value str">'-p'</span>, <span class="ruby-value str">'--password PASSWORD'</span>, <span class="ruby-value str">'set password to PASSWORD.'</span>) {<span class="ruby-operator">|</span><span class="ruby-identifier">string</span><span class="ruby-operator">|</span> <span class="ruby-ivar">@options</span>.<span class="ruby-identifier">password</span> = <span class="ruby-identifier">string</span> }
+
+      <span class="ruby-identifier">opts</span>.<span class="ruby-identifier">separator</span>(<span class="ruby-value str">''</span>)
+      <span class="ruby-identifier">opts</span>.<span class="ruby-identifier">separator</span>(<span class="ruby-value str">'Actions:'</span>);
+
+      <span class="ruby-identifier">opts</span>.<span class="ruby-identifier">on</span>(<span class="ruby-value str">'-l'</span>, <span class="ruby-value str">'--[no-]amqp_logging'</span>, <span class="ruby-value str">'enable AMQP server interaction logging.'</span>) { <span class="ruby-operator">|</span><span class="ruby-identifier">l</span><span class="ruby-operator">|</span>
+        <span class="ruby-ivar">@options</span>.<span class="ruby-identifier">amqp_logging</span> = <span class="ruby-identifier">l</span>
+      }
+
+      <span class="ruby-identifier">opts</span>.<span class="ruby-identifier">on</span>(<span class="ruby-value str">&quot;--use [PARSER]&quot;</span>, [<span class="ruby-identifier">:uri</span>, <span class="ruby-identifier">:hpricot</span>, <span class="ruby-identifier">:nokogiri</span>], <span class="ruby-value str">&quot;select PARSER for HTML/XML (uri, hpricot, nokogiri)&quot;</span>) { <span class="ruby-operator">|</span><span class="ruby-identifier">p</span><span class="ruby-operator">|</span>
+         <span class="ruby-ivar">@options</span>.<span class="ruby-identifier">use</span> = <span class="ruby-identifier">p</span>
+      }
+
+      <span class="ruby-identifier">opts</span>.<span class="ruby-identifier">on</span>(<span class="ruby-value str">'-I'</span>, <span class="ruby-value str">'--ignore_attachments'</span>, <span class="ruby-value str">'don\'t parse attachments'</span>) {<span class="ruby-operator">|</span><span class="ruby-identifier">i</span><span class="ruby-operator">|</span>
+        <span class="ruby-ivar">@options</span>.<span class="ruby-identifier">ignore_attachments</span> = <span class="ruby-identifier">i</span>
+      }
+
+    }
+
+    <span class="ruby-identifier">option_parser</span>.<span class="ruby-identifier">parse!</span>(<span class="ruby-ivar">@arguments</span>) <span class="ruby-keyword kw">rescue</span> <span class="ruby-keyword kw">return</span> <span class="ruby-keyword kw">false</span>
+
+    <span class="ruby-comment cmt">#post_process_options</span>
+
+    <span class="ruby-keyword kw">true</span>
+  <span class="ruby-keyword kw">end</span></pre>
+</body>
+</html>

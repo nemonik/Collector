@@ -54,7 +54,9 @@ module Compression
 
   def self.gunzip(name)
     Zlib::GzipReader.open(name) { |gzip|
-      File.open(File.basename(name) - 'gzip', "w") { |file|
+      dst = name.gsub(/\.gz$/,'')
+      @log.debug("uncompressing gzip to #{dst}")
+      File.open(dst, "w") { |file|
         file.write(gzip.read)
       }
     }

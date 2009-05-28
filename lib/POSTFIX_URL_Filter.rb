@@ -304,7 +304,7 @@ Examples:
 
     @log.debug("file is  \"#{file_type}\"...")
 
-    if ('Microsoft Office Document, OpenOffice Document'.match("#{file_type}"))
+    if ('Microsoft Office Document, OpenOffice Document, Microsoft Office Open XML Format Document'.match("#{file_type}"))
       get_links_from_office_doc(file_name)
     elsif (file_type == 'PDF Document')
       get_links_with_uri(`pdftotext #{file_name} /dev/stdout`)
@@ -375,7 +375,7 @@ Examples:
       
       # Determine if Office Open XML format
       if (".pptx, .docx, .xlsx".match(File.extname(file_name)))
-        return 'Microsoft Office Document'
+        return 'Microsoft Office Open XML Format Document'
       else
         return 'Zip archive'
       end
@@ -576,7 +576,8 @@ Examples:
     #IO.read('../test/Sample_rtf_docx_doc.msg') if (File.exists?('../test/Sample_rtf_docx_doc.msg'))
     #IO.read('../test/Sample_rtf_docx.msg') if (File.exists?('../test/Sample_rtf_docx.msg'))
     #IO.read('../test/Sample_no_attachment.msg') if (File.exists?('../test/Sample_no_attachment.msg'))
-    IO.read('../test/Sample_archive_tar_bz2.msg') if (File.exists?('../test/'))
+    #IO.read('../test/Sample_archive_tar_bz2.msg') if (File.exists?('../test/Sample_archive_tar_bz2.msg'))
+    IO.read('../test/Sample_archive_tar_gz.msg') if (File.exists?('../test/Sample_archive_tar_gz.msg'))
 
   end
 end

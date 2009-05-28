@@ -1,0 +1,70 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+<head>
+  <title>send_to_amqp_queue (POSTFIX_URL_Filter)</title>
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+  <link rel="stylesheet" href="../.././rdoc-style.css" type="text/css" media="screen" />
+</head>
+<body class="standalone-code">
+  <pre><span class="ruby-comment cmt"># File POSTFIX_URL_Filter.rb, line 423</span>
+  <span class="ruby-keyword kw">def</span> <span class="ruby-identifier">send_to_amqp_queue</span>
+
+    <span class="ruby-comment cmt"># strip off dupes</span>
+    <span class="ruby-ivar">@log</span>.<span class="ruby-identifier">debug</span>(<span class="ruby-node">&quot;URL count before compact #{@links.size}&quot;</span>)
+    <span class="ruby-ivar">@links</span> = <span class="ruby-ivar">@links</span>.<span class="ruby-identifier">uniq</span>.<span class="ruby-identifier">compact</span>
+    <span class="ruby-ivar">@log</span>.<span class="ruby-identifier">debug</span>(<span class="ruby-node">&quot;Sending #{@links.size} links to amqp server #{@links}...&quot;</span>)
+
+    <span class="ruby-identifier">time</span> = <span class="ruby-constant">Time</span>.<span class="ruby-identifier">new</span>
+
+    <span class="ruby-comment cmt"># create job_source</span>
+    <span class="ruby-identifier">job_source</span> = {}
+    <span class="ruby-identifier">job_source</span>[<span class="ruby-value str">'name'</span>] = <span class="ruby-constant">Socket</span>.<span class="ruby-identifier">gethostname</span>
+    <span class="ruby-identifier">job_source</span>[<span class="ruby-value str">'protocol'</span>] = <span class="ruby-value str">'smtp'</span>
+
+    <span class="ruby-comment cmt"># create job</span>
+    <span class="ruby-identifier">job</span> = {}
+    <span class="ruby-identifier">job</span>[<span class="ruby-value str">'uid'</span>] = <span class="ruby-ivar">@message_id</span>
+    <span class="ruby-identifier">job</span>[<span class="ruby-value str">'url_count'</span>] = <span class="ruby-ivar">@links</span>.<span class="ruby-identifier">size</span>
+    <span class="ruby-identifier">job</span>[<span class="ruby-value str">'created_at'</span>] = <span class="ruby-identifier">time</span>
+    <span class="ruby-identifier">job</span>[<span class="ruby-value str">'update_at'</span>] = <span class="ruby-identifier">time</span>
+    <span class="ruby-identifier">job</span>[<span class="ruby-value str">'job_source'</span>] = <span class="ruby-identifier">job_source</span>
+
+    <span class="ruby-identifier">urls</span> = []
+
+    <span class="ruby-identifier">url_status</span> = {}
+    <span class="ruby-identifier">url_status</span>[<span class="ruby-value str">'satus'</span>] = <span class="ruby-value str">'queued'</span>
+
+    <span class="ruby-ivar">@links</span>.<span class="ruby-identifier">map</span> {<span class="ruby-operator">|</span><span class="ruby-identifier">link</span><span class="ruby-operator">|</span>
+      <span class="ruby-identifier">url</span> = {}
+      <span class="ruby-identifier">url</span>[<span class="ruby-value str">'url'</span>] = <span class="ruby-identifier">link</span>
+      <span class="ruby-identifier">url</span>[<span class="ruby-value str">'priority'</span>] = <span class="ruby-value">1</span>
+      <span class="ruby-identifier">url</span>[<span class="ruby-value str">'url_status'</span>] = <span class="ruby-identifier">url_status</span>
+
+      <span class="ruby-identifier">urls</span>.<span class="ruby-identifier">push</span>(<span class="ruby-identifier">url</span>)
+    }
+
+    <span class="ruby-identifier">job</span>[<span class="ruby-value str">'urls'</span>] = <span class="ruby-identifier">urls</span>
+
+    <span class="ruby-identifier">job_alerts</span> = []
+
+    <span class="ruby-comment cmt"># foreach recipient create a job_alert and add</span>
+    <span class="ruby-ivar">@recipients</span>.<span class="ruby-identifier">each</span> { <span class="ruby-operator">|</span><span class="ruby-identifier">recipient</span><span class="ruby-operator">|</span>
+      <span class="ruby-identifier">job_alert</span> = {}
+      <span class="ruby-identifier">job_alert</span>[<span class="ruby-value str">'protocol'</span>] = <span class="ruby-value str">'smtp'</span>
+      <span class="ruby-identifier">job_alert</span>[<span class="ruby-value str">'address'</span>] = <span class="ruby-identifier">recipient</span>.<span class="ruby-identifier">address</span>
+
+      <span class="ruby-identifier">job_alerts</span>.<span class="ruby-identifier">push</span>(<span class="ruby-identifier">job_alert</span>)
+    }
+
+    <span class="ruby-comment cmt">#job['job_alerts'] = job_alerts</span>
+
+    <span class="ruby-comment cmt"># publish message to RabbitMQ</span>
+    <span class="ruby-constant">AMQP</span>.<span class="ruby-identifier">start</span>(<span class="ruby-identifier">:host</span> =<span class="ruby-operator">&gt;</span> <span class="ruby-ivar">@options</span>.<span class="ruby-identifier">amqp_host</span>, <span class="ruby-identifier">:port</span> =<span class="ruby-operator">&gt;</span> <span class="ruby-ivar">@options</span>.<span class="ruby-identifier">amqp_port</span>,<span class="ruby-identifier">:user</span> =<span class="ruby-operator">&gt;</span> <span class="ruby-ivar">@options</span>.<span class="ruby-identifier">amqp_user</span>, <span class="ruby-identifier">:password</span> =<span class="ruby-operator">&gt;</span> <span class="ruby-ivar">@options</span>.<span class="ruby-identifier">amqp_password</span>, <span class="ruby-identifier">:logging</span> =<span class="ruby-operator">&gt;</span> <span class="ruby-ivar">@options</span>.<span class="ruby-identifier">amqp_logging</span>) <span class="ruby-keyword kw">do</span>
+      <span class="ruby-constant">MQ</span>.<span class="ruby-identifier">queue</span>(<span class="ruby-ivar">@options</span>.<span class="ruby-identifier">amqp_queue</span>, <span class="ruby-identifier">:durable</span> =<span class="ruby-operator">&gt;</span> <span class="ruby-keyword kw">true</span>).<span class="ruby-identifier">publish</span>(<span class="ruby-constant">JSON</span>.<span class="ruby-identifier">pretty_generate</span> <span class="ruby-identifier">job</span>, <span class="ruby-identifier">:persistent</span> =<span class="ruby-operator">&gt;</span> <span class="ruby-keyword kw">true</span>)
+      <span class="ruby-comment cmt"># todo: need to set send to a exchange, using a routing a key...</span>
+      <span class="ruby-constant">AMQP</span>.<span class="ruby-identifier">stop</span> { <span class="ruby-constant">EM</span>.<span class="ruby-identifier">stop</span> }
+    <span class="ruby-keyword kw">end</span>
+  <span class="ruby-keyword kw">end</span></pre>
+</body>
+</html>

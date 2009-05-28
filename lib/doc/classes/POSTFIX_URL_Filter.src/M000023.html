@@ -1,0 +1,31 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+<head>
+  <title>process_standard_input (POSTFIX_URL_Filter)</title>
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+  <link rel="stylesheet" href="../.././rdoc-style.css" type="text/css" media="screen" />
+</head>
+<body class="standalone-code">
+  <pre><span class="ruby-comment cmt"># File POSTFIX_URL_Filter.rb, line 566</span>
+  <span class="ruby-keyword kw">def</span> <span class="ruby-identifier">process_standard_input</span>
+    <span class="ruby-comment cmt">#@stdin.read</span>
+
+    <span class="ruby-comment cmt">#IO.read('../test/Sample_csv.msg') if (File.exists?('../test/Sample_csv.msg'))</span>
+    <span class="ruby-comment cmt">#IO.read('../test/Sample_docx.msg') if (File.exists?('../test/Sample_docx.msg'))</span>
+    <span class="ruby-comment cmt">#IO.read('../test/Sample_odt.msg') if (File.exists?('../test/Sample_odt.msg'))</span>
+    <span class="ruby-comment cmt">#IO.read('../test/Sample_ppt.msg') if (File.exists?('../test/Sample_ppt.msg'))</span>
+    <span class="ruby-comment cmt">#IO.read('../test/Sample_RTF.msg') if (File.exists?('../test/Sample_rtf.msg'))</span>
+    <span class="ruby-comment cmt">#IO.read('../test/Sample_doc.msg') if (File.exists?('../test/Sample_doc.msg'))</span>
+    <span class="ruby-comment cmt">#IO.read('../test/Sample_html.msg') if (File.exists?('../test/Sample_html.msg'))</span>
+    <span class="ruby-comment cmt">#IO.read('../test/Sample_pdf.msg') if (File.exists?('../test/Sample_pdf.msg'))</span>
+    <span class="ruby-comment cmt">#IO.read('../test/Sample_pptx.msg') if (File.exists?('../test/Sample_pptx.msg'))</span>
+    <span class="ruby-comment cmt">#IO.read('../test/Sample_txt.msg') if (File.exists?('../test/Sample_txt.msg'))</span>
+    <span class="ruby-comment cmt">#IO.read('../test/FWD_Sample_pptx.msg') if (File.exists?('../test/FWD_Sample_pptx.msg'))</span>
+    <span class="ruby-constant">IO</span>.<span class="ruby-identifier">read</span>(<span class="ruby-value str">'../test/Sample_rtf_docx_doc.msg'</span>) <span class="ruby-keyword kw">if</span> (<span class="ruby-constant">File</span>.<span class="ruby-identifier">exists?</span>(<span class="ruby-value str">'../test/Sample_rtf_docx_doc.msg'</span>))
+    <span class="ruby-comment cmt">#IO.read('../test/Sample_rtf_docx.msg') if (File.exists?('../test/Sample_rtf_docx.msg'))</span>
+    <span class="ruby-comment cmt">#IO.read('../test/Sample_no_attachment.msg') if (File.exists?('../test/Sample_no_attachment.msg'))</span>
+
+  <span class="ruby-keyword kw">end</span></pre>
+</body>
+</html>
