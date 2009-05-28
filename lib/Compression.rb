@@ -52,21 +52,16 @@ module Compression
 
   end
 
-  def self.gunzip(names)
-
-    names.each { |name|
-
-      Zlib::GzipReader.open(name) { |gzip|
-        File.open(File.basename(name) - 'gzip', "w") { |file|
-          file.write(gzip.read)
-        }
+  def self.gunzip(name)
+    Zlib::GzipReader.open(name) { |gzip|
+      File.open(File.basename(name) - 'gzip', "w") { |file|
+        file.write(gzip.read)
       }
-
-      @log.debug("guzipped #{name}")
-
-      FileUtils.rm(name) # to model cmd-line behavior
     }
 
+    @log.debug("guzipped #{name}")
+
+    FileUtils.rm(name) # to model cmd-line behavior
   end
 
   def self.bzip2(names)
@@ -76,11 +71,9 @@ module Compression
     }
   end
 
-  def self.bunzip2(names)
-    names.each { |name|
-      `bunzip2 #{name}`
-      @log.debug("bunzip2ed #{name}")
-    }
+  def self.bunzip2(name)
+    `bunzip2 #{name}`
+    @log.debug("bunzip2ed #{name}")
   end
 
   def self.tar(dst_name, names)
@@ -93,7 +86,7 @@ module Compression
   end
 
   def self.untar(tar_name, dst)
-    Archive::Tar::Minitar.Minitar.unpack(tar_name, dst)
+    Archive::Tar::Minitar.unpack(tar_name, dst)
     @log.debug("untared #{tar_name} to #{dst}")
   end
   

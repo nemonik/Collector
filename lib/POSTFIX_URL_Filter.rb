@@ -319,40 +319,38 @@ Examples:
     elsif (file_type == 'bzip2 compressed data')
       process_compressed(file_name, 'bzip2')
     elsif (file_type == 'tar archive')
-      process_compressed(file_name, 'tart')
+      process_compressed(file_name, 'tar')
+    else
+      @log.error("Unhandled file type of \"#{file_type}\"")
     end
   end
 
   def process_compressed(file_name, compression)
 
+    dst = File.dirname(file_name)
+
     @log.debug("processing #{compression} compressed #{file_name}...")
 
-    dst = File.join(File.dirname(file_name), Guid.new.to_s)
-    Dir.new(dst)
-    FileUtils.cp(file_name, dst)
-
-    tmp_file_name = File.join(dst, File.basename(file_name))
-
     if (compression == 'zip')
-      Compression.unzip(tmp_file_name, dst)
+      Compression.unzip(file_name, dst)
+      FileUtils.rm(file_name)
     elsif (compression == 'gzip')
-      Compression.gunzip(tmp_file_name)
+      Compression.gunzip(file_name)
     elsif (compression == 'bzip2')
-      Compression.bunzip2(tmp_file_name)
+      Compression.bunzip2(file_name)
     elsif (compression == 'tar')
-      Compression.untar(tmp_file_name, dst)
+      Compression.untar(file_name, dst)
+      FileUtils.rm(file_name)
     else
       @log.error("#{compression} unhandled form of compression")
     end
 
-    FileUtils.rm(tmp_file_name)
-
-    Dir.foreach(dst) { |file_name|
-      file_name = File.join(dst, file_name)
-
-      process_file(file_name) if file_name.file?
+    Find.find(dst) { |contents|
+      if File.file? contents
+        @log.debug("from #{File.basename(file_name)}, processing #{contents}")
+        process_file(contents)
+      end
     }
-
   end
 
   def mime_shared_info(file_name)
@@ -575,9 +573,10 @@ Examples:
     #IO.read('../test/Sample_pptx.msg') if (File.exists?('../test/Sample_pptx.msg'))
     #IO.read('../test/Sample_txt.msg') if (File.exists?('../test/Sample_txt.msg'))
     #IO.read('../test/FWD_Sample_pptx.msg') if (File.exists?('../test/FWD_Sample_pptx.msg'))
-    IO.read('../test/Sample_rtf_docx_doc.msg') if (File.exists?('../test/Sample_rtf_docx_doc.msg'))
+    #IO.read('../test/Sample_rtf_docx_doc.msg') if (File.exists?('../test/Sample_rtf_docx_doc.msg'))
     #IO.read('../test/Sample_rtf_docx.msg') if (File.exists?('../test/Sample_rtf_docx.msg'))
     #IO.read('../test/Sample_no_attachment.msg') if (File.exists?('../test/Sample_no_attachment.msg'))
+    IO.read('../test/Sample_archive_tar_bz2.msg') if (File.exists?('../test/'))
 
   end
 end
