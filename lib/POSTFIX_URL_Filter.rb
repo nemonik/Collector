@@ -20,15 +20,20 @@
 #    -h, --help                       display this help and exit.
 #
 # == AMQP server options:
-#    -H, --host HOST                  set host to HOST
-#    -P, --port PORT                  set port to PORT
+#    -H, --host HOST                  set host to HOST.
+#    -P, --port PORT                  set port to PORT.
 #    -u, --user USER                  set login to USER.
 #    -p, --password PASSWORD          set password to PASSWORD.
+#    -q, --queue QUEUE                set queue to QUEUE.
 #
 # == Actions:
 #    -l, --[no-]amqp_logging          enable AMQP server interaction logging.
-#        --use [PARSER]               select PARSER for HTML/XML (uri, hpricot, nokogiri)
+#        --use [PARSER]               select PARSER for HTML/XML (uri, hpricot, nokogiri).
 #    -I, --ingore_attachments         ignore attachments, don't parse them.
+#    -t, --timeout SECONDS            set a SECONDS timeout for how long the filter
+#                                       should run parsing for URLs. Default is 40.
+#    -f, --file FILENAME              parse this FILENAME path instead of the
+#                                       standard input.
 #
 # Author::    Michael Joseph Walsh (mailto:mjwalsh@mitre.org)
 # Copyright:: Copyright (c) 2009 The MITRE Corporation.  All Rights Reserved.
@@ -49,12 +54,14 @@ require 'fileutils'
 require 'socket'
 require 'logger'
 require 'Compression'
+require 'timeout'
 
 class POSTFIX_URL_Filter
   VERSION = '0.0.1'
 
   attr_reader :options
 
+  # Initialize the filter
   def initialize(arguments, stdin)
     @arguments = arguments
     @stdin = stdin
@@ -75,9 +82,12 @@ class POSTFIX_URL_Filter
     @options.amqp_port = '5672'
     @options.amqp_user = 'guest'
     @options.amqp_password = 'guest'
+    @options.amqp_queue = 'jobs'
     @options.tmp_folder_for_attachments = "/home/walsh/tmp"
     @options.uri_schemes = ['http', 'https', 'ftp', 'ftps']
     @options.ignore_attachments = false
+    @options.timeout = 40
+    @options.file_name = ''
   end
 
   # Parse options, check arguments, then process the email
@@ -92,7 +102,13 @@ class POSTFIX_URL_Filter
         output_options if @options.verbose # [Optional]
 
         process_arguments
-        process_email(process_standard_input)  # process email from standard input
+
+        if @options.file_name.empty?
+          process_email(process_standard_input)  # process email from standard input
+        else
+          process_email(process_file_input) # process email from input file
+        end
+
         send_to_amqp_queue 
 
         finish_time = Time.now
@@ -107,10 +123,15 @@ class POSTFIX_URL_Filter
       @log.error("invalid options")
     end
 
+  rescue AMQP::Error
+    @log.error("Could not send links to be processed, reason: \"#{$!}\"")
+  rescue
+    @log.error("#{$!}")
   end
 
-  #protected
+  protected
 
+  # Have the options been parsed
   def parsed_options?
 
     # Specify options
@@ -148,27 +169,47 @@ Examples:
       opts.separator('')
       opts.separator('AMQP server options:')
 
-      opts.on('-H', '--host HOST', 'set host to HOST') { |string| @options.amqp_host = string }
+      opts.on('-H', '--host HOST', String, 'set host to HOST.') { |host|
+        @options.amqp_host = host
+      }
 
-      opts.on('-P', '--port PORT', 'set port to PORT') { |string| @options.amqp_port = string }
+      opts.on('-P', '--port PORT', String, 'set port to PORT.') { |port|
+        @options.amqp_port = port
+      }
 
-      opts.on('-u', '--user USER', 'set login to USER.') { |string| @options.user = string }
+      opts.on('-u', '--user USER', String, 'set login to USER.') { |user|
+        @options.user = user
+      }
 
-      opts.on('-p', '--password PASSWORD', 'set password to PASSWORD.') {|string| @options.password = string }
+      opts.on('-p', '--password PASSWORD', String, 'set password to PASSWORD.') {|password|
+        @options.password = password
+      }
+
+      opts.on('-q', '--queue QUEUE', String, 'set queue to QUEUE.') {|password|
+        @options.password = password
+      }
 
       opts.separator('')
       opts.separator('Actions:');
 
-      opts.on('-l', '--[no-]amqp_logging', 'enable AMQP server interaction logging.') { |l|
-        @options.amqp_logging = l
+      opts.on('-l', '--[no-]amqp_logging', 'enable AMQP server interaction logging.') { |boolean|
+        @options.amqp_logging = boolean
       }
 
-      opts.on("--use [PARSER]", [:uri, :hpricot, :nokogiri], "select PARSER for HTML/XML (uri, hpricot, nokogiri)") { |p|
-         @options.use = p
+      opts.on('--use [PARSER]', [:uri, :hpricot, :nokogiri], 'select PARSER for HTML/XML (uri, hpricot, nokogiri).') { |parser|
+        @options.use = parser
       }
 
-      opts.on('-I', '--ignore_attachments', 'don\'t parse attachments') {|i|
-        @options.ignore_attachments = i
+      opts.on('-I', '--ignore_attachments', 'don\'t parse attachments.') { |boolean|
+        @options.ignore_attachments = boolean
+      }
+
+      opts.on('-t', '--timeout SECONDS', Integer, 'set a SECONDS timeout for how long the filter should run parsing for URLs. Default is #{@options.timeout}.') { |timeout|
+        @options.timeout = timeout
+      }
+
+      opts.on('-f', '--file FILE_NAME', String, 'parse this FILENAME path instead of the standard input.') { |file_name|
+        @options.file_name = file_name
       }
 
     }
@@ -204,8 +245,6 @@ Examples:
   # Setup the arguments
   def process_arguments
 
-    @options.amqp_queue = @arguments.length == 1 ? @arguments[0] : 'jobs'
-
   end
 
   # Output the version
@@ -215,9 +254,11 @@ Examples:
 
   end
 
-  # Process the email, pulling out all the unique URLs and send to AMQP
+  # Process the email, pulling out all the unique links and send to AMQP
   # server to be later be processed
   def process_email(msg_text)
+
+    @log.debug("#{msg_text}")
 
     message = RMail::Parser.read(msg_text)
 
@@ -230,7 +271,7 @@ Examples:
     @subject = '(no subject)' if @subject.size == 0
 
     @message_id = (header['Message-ID'] != nil) ? header['Message-ID'] : Guid.new.to_s
-    
+
     @recipients.concat(RMail::Address.parse(header['to']) + RMail::Address.parse(header['cc'])) #RMail::Address.parse(header.match(/^(to|cc)/, //))) Should work, but doesn't.
 
     message.each_part { |part|
@@ -272,7 +313,13 @@ Examples:
 
           file.close
 
-          process_file(file_name)
+          begin
+            Timeout::timeout(@options.timeout) {
+              process_file(file_name)
+            }
+          rescue Timeout::Error
+            @log.info("Processing of attachments has timed out.")
+          end
 
           # clean up temp files
           FileUtils.rm_rf(folder_name)
@@ -292,8 +339,11 @@ Examples:
 
       end if ((doc.class != NilClass) && (doc.strip != ''))
     } if (message.multipart?)
+  rescue
+    @log.error("#{$!}, email is likely not properly formatted.")
   end
 
+  # Process the file
   def process_file(file_name)
 
     @log.debug("writing file #{file_name}...")
@@ -321,8 +371,10 @@ Examples:
     else
       @log.error("Unhandled file type of \"#{file_type}\"")
     end
+
   end
 
+  # Process the compressed file using a particular compression
   def process_compressed(file_name, compression)
 
     dst = File.dirname(file_name)
@@ -343,6 +395,7 @@ Examples:
       @log.error("#{compression} unhandled form of compression")
     end
 
+    # process contents, drilling into sub-folders if they exist
     Find.find(dst) { |contents|
       if File.file? contents
         @log.debug("from #{File.basename(file_name)}, processing #{contents}")
@@ -351,6 +404,7 @@ Examples:
     }
   end
 
+  # Determine the mimetype of the file
   def mime_shared_info(file_name)
 
     file_output = `file -kb \"#{file_name}\"`.gsub(/\n/,"")
@@ -387,6 +441,7 @@ Examples:
     end
   end
 
+  # Get the links from the MS Office or OpenOffice document
   def get_links_from_office_doc(file_name)
     # TODO: Handle Excel documents.
 
@@ -414,7 +469,7 @@ Examples:
     }
   end
 
-  # send off to AMQP queue
+  # Send the links off to AMQP queue
   def send_to_amqp_queue
 
     # strip off dupes
@@ -474,7 +529,7 @@ Examples:
     end
   end
 
-  # select the method to parse out URLs
+  # Select the method to parse out links
   def get_links(text)
     if (@options.use == 'uri')
       get_links_with_uri(text)
@@ -485,7 +540,7 @@ Examples:
     end
   end
 
-  # retrieves all URLs in the text described by @options.uri_schema
+  # Retrieves all links in the text described by @options.uri_schema
   def get_links_with_uri(text)
     @log.debug("using URI to extract URLs...")
 
@@ -494,7 +549,7 @@ Examples:
     }
   end
 
-  # can be tuned to be more pecific as to what URLs are retrieved from HTML
+  # Get the links from the text using the Hpricot XML/HTML parser
   def get_links_with_hpricot(text)
 
     @log.debug("using hpricot to parse...")
@@ -532,7 +587,7 @@ Examples:
     end
   end
 
-  # can be tuned to be more specific as to what URLs are retrieved from HTML
+  # Get the links from the text using the Nokogiri XML/HTML parser
   def get_links_with_nokogiri(text)
 
     @log.debug("using nokogiri to parse...")
@@ -558,27 +613,21 @@ Examples:
     end
   end
 
+  # Process the standard input
   def process_standard_input
-    #@stdin.read
+    @log.debug("Processing standard input...")
+    @stdin.read
+  end
 
-    #IO.read('../test/Sample_csv.msg') if (File.exists?('../test/Sample_csv.msg'))
-    #IO.read('../test/Sample_docx.msg') if (File.exists?('../test/Sample_docx.msg'))
-    #IO.read('../test/Sample_odt.msg') if (File.exists?('../test/Sample_odt.msg'))
-    IO.read('../test/Sample_ppt.msg') if (File.exists?('../test/Sample_ppt.msg'))
-    #IO.read('../test/Sample_RTF.msg') if (File.exists?('../test/Sample_rtf.msg'))
-    #IO.read('../test/Sample_doc.msg') if (File.exists?('../test/Sample_doc.msg'))
-    #IO.read('../test/Sample_html.msg') if (File.exists?('../test/Sample_html.msg'))
-    #IO.read('../test/Sample_pdf.msg') if (File.exists?('../test/Sample_pdf.msg'))
-    #IO.read('../test/Sample_pptx.msg') if (File.exists?('../test/Sample_pptx.msg'))
-    #IO.read('../test/Sample_txt.msg') if (File.exists?('../test/Sample_txt.msg'))
-    #IO.read('../test/FWD_Sample_pptx.msg') if (File.exists?('../test/FWD_Sample_pptx.msg'))
-    #IO.read('../test/Sample_rtf_docx_doc.msg') if (File.exists?('../test/Sample_rtf_docx_doc.msg'))
-    #IO.read('../test/Sample_rtf_docx.msg') if (File.exists?('../test/Sample_rtf_docx.msg'))
-    #IO.read('../test/Sample_no_attachment.msg') if (File.exists?('../test/Sample_no_attachment.msg'))
-    #IO.read('../test/Sample_archive_tar_bz2.msg') if (File.exists?('../test/Sample_archive_tar_bz2.msg'))
-    #IO.read('../test/Sample_archive_tar_gz.msg') if (File.exists?('../test/Sample_archive_tar_gz.msg'))
-    #IO.read('../test/Sample_archive_zip.msg') if (File.exists?('../test/Sample_archive_zip.msg'))
+  # Process the file input
+  def process_file_input
+    @log.debug("Processing input read from #{@options.file_name}...")
 
+    if File.exist?(@options.file_name)
+      File.open(@options.file_name).read
+    else
+      raise IOError("File not found!")
+    end
   end
 end
 
