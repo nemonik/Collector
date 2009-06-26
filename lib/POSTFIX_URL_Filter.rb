@@ -49,12 +49,14 @@ require 'hpricot'
 require 'nokogiri'
 require 'guid'
 require 'mq'
+require 'eventmachine'
 require 'json'
 require 'fileutils'
 require 'socket'
 require 'logger'
 require 'Compression'
 require 'timeout'
+
 
 class POSTFIX_URL_Filter
   VERSION = '0.0.1'
@@ -80,10 +82,12 @@ class POSTFIX_URL_Filter
     @options.use = 'nokogiri'
     @options.amqp_host = 'localhost'
     @options.amqp_port = '5672'
+    @options.amqp_vhost = "/honeyclient.org"
+    @options.amqp_routing_key = '1.job.create.job.urls'
     @options.amqp_user = 'guest'
     @options.amqp_password = 'guest'
-    @options.amqp_queue = 'jobs'
-    @options.tmp_folder_for_attachments = "/home/walsh/tmp"
+    @options.amqp_exchange = 'events'
+    @options.tmp_folder_for_attachments = '/home/walsh/tmp'
     @options.uri_schemes = ['http', 'https', 'ftp', 'ftps']
     @options.ignore_attachments = false
     @options.timeout = 40
@@ -178,15 +182,23 @@ Examples:
       }
 
       opts.on('-u', '--user USER', String, 'set login to USER.') { |user|
-        @options.user = user
+        @options.amqp_user = user
       }
 
       opts.on('-p', '--password PASSWORD', String, 'set password to PASSWORD.') {|password|
-        @options.password = password
+        @options.amqp_password = password
       }
 
-      opts.on('-q', '--queue QUEUE', String, 'set queue to QUEUE.') {|password|
-        @options.password = password
+      opts.on('-e', '--exchange EXCHANGE', String, 'set exchange to EXCHANGE.') {|exchange|
+        @options.amqp_exchange = exchange
+      }
+
+      opts.on('-v', '--vhost VHOST', String, 'set virtual host to VHOST.') {|vhost|
+        @options.amqp_vhost = vhost
+      }
+
+      opts.on('-k', '--routing_key ROUTING_KEY', String, 'set routing key to ROUTING_KEY.') {|routing_key|
+        @options.amqp_routing_key = routing_key
       }
 
       opts.separator('')
@@ -200,7 +212,7 @@ Examples:
         @options.use = parser
       }
 
-      opts.on('-I', '--ignore_attachments', 'don\'t parse attachments.') { |boolean|
+      opts.on('-i', '--ignore_attachments', 'don\'t parse attachments.') { |boolean|
         @options.ignore_attachments = boolean
       }
 
@@ -299,7 +311,7 @@ Examples:
 
         if (header['Content-Transfer-Encoding'].downcase.include? 'base64')
 
-          @log.debug("handling base64 attachment...")
+          @log.debug('handling base64 attachment...')
 
           # create unique directory to hold the file for processing, and allow for easy cleanup
           folder_name = @options.tmp_folder_for_attachments + "/" + Guid.new.to_s
@@ -309,7 +321,7 @@ Examples:
 
           file = File.new(file_name, 'w')
 
-          file.syswrite(doc.unpack("m")[0]) # base64 decode and write out
+          file.syswrite(doc.unpack('m')[0]) # base64 decode and write out
 
           file.close
 
@@ -318,7 +330,7 @@ Examples:
               process_file(file_name)
             }
           rescue Timeout::Error
-            @log.info("Processing of attachments has timed out.")
+            @log.info('Processing of attachments has timed out.')
           end
 
           # clean up temp files
@@ -451,7 +463,7 @@ Examples:
     }
 
     # handle hmtl, if the doc was ms word-like
-    file_name = file_name + ".html"
+    file_name = file_name + '.html'
 
     if File.exists?(file_name)
       @log.debug("reading #{file_name}")
@@ -469,7 +481,7 @@ Examples:
     }
   end
 
-  # Send the links off to AMQP queue
+  # Send the links off to AMQP exchange/queue
   def send_to_amqp_queue
 
     # strip off dupes
@@ -481,12 +493,12 @@ Examples:
 
     # create job_source
     job_source = {}
-    job_source['name'] = Socket.gethostname
+    job_source['name'] = @message_id
     job_source['protocol'] = 'smtp'
 
     # create job
     job = {}
-    job['uid'] = @message_id
+    job['uid'] = Guid.new.to_s
     job['url_count'] = @links.size
     job['created_at'] = time
     job['update_at'] = time
@@ -521,12 +533,19 @@ Examples:
 
     #job['job_alerts'] = job_alerts
 
+    puts JSON.pretty_generate job
+
     # publish message to RabbitMQ
-    AMQP.start(:host => @options.amqp_host, :port => @options.amqp_port,:user => @options.amqp_user, :password => @options.amqp_password, :logging => @options.amqp_logging) do
-      MQ.queue(@options.amqp_queue, :durable => true).publish(JSON.pretty_generate job, :persistent => true)
-      # todo: need to set send to a exchange, using a routing a key...
-      AMQP.stop { EM.stop }
+    EM.run do
+      connection = AMQP.connect(:host => @options.amqp_host, :port => @options.amqp_port,:user => @options.amqp_user, :password => @options.amqp_password, :vhost => @options.amqp_vhost, :logging => @options.amqp_logging)
+      channel = MQ.new(connection)
+      exchange = MQ::Exchange.new(channel, :topic, @options.amqp_exchange, {:passive => false, :durable => true, :auto_delete => false, :internal => false, :nowait => false})
+      queue = MQ::Queue.new(channel, 'events', :durable => true)
+      queue.bind(exchange)
+      queue.publish(JSON.pretty_generate job, {:routing_key => '1.job.create.job.urls', :persistent => true})
+      connection.close{ EM.stop }
     end
+
   end
 
   # Select the method to parse out links
