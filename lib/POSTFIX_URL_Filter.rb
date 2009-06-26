@@ -533,8 +533,6 @@ Examples:
 
     #job['job_alerts'] = job_alerts
 
-    puts JSON.pretty_generate job
-
     # publish message to RabbitMQ
     EM.run do
       connection = AMQP.connect(:host => @options.amqp_host, :port => @options.amqp_port,:user => @options.amqp_user, :password => @options.amqp_password, :vhost => @options.amqp_vhost, :logging => @options.amqp_logging)
