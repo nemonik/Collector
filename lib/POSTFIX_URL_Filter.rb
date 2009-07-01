@@ -1,4 +1,4 @@
-#!/bin/usr/local/ruby19
+#!/usr/local/bin/ruby19
 
 # == Synopsis
 #   A POSTFIX script that filters email for URLs and sends the URLs off to
@@ -6,38 +6,59 @@
 #
 # == Usage:  postfix_url_filter.rb [options] AMQP_queue
 #
+# Usage:  ./POSTFIX_URL_Filter.rb [options]
+#
 # A POSTFIX script that filters email for URLs and sends the URLs off to
 # RabbitMQ queue to be later processed.
 #
-# == Examples:
-#    cat email.eml > main.rb
-#    cat email.eml > main.rb jobs
-#    cat email.eml > main.rb --host localhost --port 5672 --user quest --password quest jobs
 #
-# == Common options:
-#    -v, --version                    display version number and exit.
+# Examples:
+#      POSTFIX_URL_Filter.rb --sendmail --host drone.honeyclient.org \\
+#        --port 5672 --vhost /collector.testing --user guest \\
+#        --password guest --exchange events \\
+#        --routing_key 1.job.create.job.urls.job_alerts \\
+#        --no-amqp_logging --timeout 100 --use nokogiri
+#
+#      POSTFIX_URL_Filter.rb --sendmail --host drone.honeyclient.org \\
+#        --port 5672 --vhost /collector.testing --user guest \\
+#        --password guest --exchange events \\
+#        --routing_key 1.job.create.job.urls.job_alerts \\
+#        --no-amqp_logging --timeout 100 --use nokogiri \\
+#        --file ../test/Sample_doc.msg
+#
+#      POSTFIX_URL_Filter.rb -h
+#
+# Common options:
+#       --version                    display version number and exit.
 #    -V, --[no-]verbose               run verbosely.
 #    -h, --help                       display this help and exit.
 #
-# == AMQP server options:
+# AMQP server options:
 #    -H, --host HOST                  set host to HOST.
 #    -P, --port PORT                  set port to PORT.
 #    -u, --user USER                  set login to USER.
 #    -p, --password PASSWORD          set password to PASSWORD.
-#    -q, --queue QUEUE                set queue to QUEUE.
+#    -e, --exchange EXCHANGE          set exchange to EXCHANGE.
+#    -v, --vhost VHOST                set virtual host to VHOST.
+#    -k, --routing_key ROUTING_KEY    set routing key to ROUTING_KEY.
 #
-# == Actions:
+# Actions:
+#    -S, --[no-]sendmail              Send message onto SendMail.
 #    -l, --[no-]amqp_logging          enable AMQP server interaction logging.
-#        --use [PARSER]               select PARSER for HTML/XML (uri, hpricot, nokogiri).
-#    -I, --ingore_attachments         ignore attachments, don't parse them.
-#    -t, --timeout SECONDS            set a SECONDS timeout for how long the filter
-#                                       should run parsing for URLs. Default is 40.
-#    -f, --file FILENAME              parse this FILENAME path instead of the
-#                                       standard input.
-#
-# Author::    Michael Joseph Walsh (mailto:mjwalsh@mitre.org)
+#        --use [PARSER]               select PARSER for HTML/XML (uri, hpricot,
+#                                        nokogiri).
+#    -i, --ignore_attachments         don't parse attachments.
+#    -t, --timeout SECONDS            set a SECONDS timeout for how long the
+#                                        filter should run parsing for URLs.
+#                                        Default is 40.
+#    -f, --file FILE_NAME             parse this FILENAME path instead of the
+#                                        standard input.
+#                                                                                              
+# Author::    Michael Joseph Walsh (mailto:mjwalsh_n_o__s_p_a_m@mitre.org)
 # Copyright:: Copyright (c) 2009 The MITRE Corporation.  All Rights Reserved.
 # License::
+
+$LOAD_PATH << File.dirname(__FILE__)  # hack for now to pick up my Compression module
 
 require 'optparse'
 require 'ostruct'
@@ -67,23 +88,28 @@ class POSTFIX_URL_Filter
   def initialize(arguments, stdin)
     @arguments = arguments
     @stdin = stdin
-
+    
+    @msg_text = nil
+    
     @recipients = []
     @links = []
+    @x_count = "" # used inconjunction with Send_Email.rb script.
 
-    @log = Logger.new(STDOUT)
-    @log.level = Logger::DEBUG
+    @log = Logger.new('/home/walsh/Development/workspace/postfixUrlParsing/lib/log.txt')
+    #@log = Logger.new(STDOUT)
+    @log.level = Logger::INFO #DEBUG ERROR 
     @log.datetime_format = "%H:%M:%S"
 
     # Set defaults
     @options = OpenStruct.new
-    @options.verbose = true
+    @options.verbose = false
+    @options.sendmail = true
     @options.amqp_logging = false
     @options.use = 'nokogiri'
     @options.amqp_host = 'localhost'
     @options.amqp_port = '5672'
-    @options.amqp_vhost = "/honeyclient.org"
-    @options.amqp_routing_key = '1.job.create.job.urls'
+    @options.amqp_vhost = '/honeyclient.org'
+    @options.amqp_routing_key = '1.job.create.job.urls.job_alerts'
     @options.amqp_user = 'guest'
     @options.amqp_password = 'guest'
     @options.amqp_exchange = 'events'
@@ -91,7 +117,7 @@ class POSTFIX_URL_Filter
     @options.uri_schemes = ['http', 'https', 'ftp', 'ftps']
     @options.ignore_attachments = false
     @options.timeout = 40
-    @options.file_name = ''
+    @options.file_name = nil
   end
 
   # Parse options, check arguments, then process the email
@@ -103,15 +129,17 @@ class POSTFIX_URL_Filter
         start_time = Time.now
         @log.info("Start at #{start_time}") if @options.verbose
 
-        output_options if @options.verbose # [Optional]
+        output_options if @options.verbos
 
         process_arguments
 
-        if @options.file_name.empty?
-          process_email(process_standard_input)  # process email from standard input
+        if ((@options.file_name.nil?) || (@options.file_name.empty?))
+          process_standard_input  # process email from standard input
         else
-          process_email(process_file_input) # process email from input file
+          process_file_input # process email from input file
         end
+
+        process_email
 
         send_to_amqp_queue 
 
@@ -127,13 +155,40 @@ class POSTFIX_URL_Filter
       @log.error("invalid options")
     end
 
-  rescue AMQP::Error
-    @log.error("Could not send links to be processed, reason: \"#{$!}\"")
-  rescue
-    @log.error("#{$!}")
+  rescue Exception => e
+    record_error(e)
+    SystemExit.new(69)  # EX_UNAVAILABLE  
   end
 
   protected
+  
+  # Record the error for posterity
+  def record_error(e)
+    if ((!@message_id.nil?) && (!@message_id.empty?))
+      begin
+        @log.error("#{@message_id}\n  -> #{e.backtrace}")
+
+    	  folder_name = File.join(@options.tmp_folder_for_attachments, "bad-msg", @message_id)
+        Dir.mkdir(folder_name)
+
+        msg_file_name = File.join(folder_name, @message_id + ".msg")
+
+        msg_file = File.new(msg_file_name, 'w')
+        msg_file.syswrite(@msg_text)
+        
+        exception_name = File.join(folder_name, @message_id + ".backtrace")
+        
+        exception_file = File.new(exception_name, 'w')
+        exception_file.syswrite("#{e.message}\n\n")
+        exception_file.syswrite("#{e.backtrace}")
+      ensure
+        msg_file.close unless msg_file.nil?
+        exception_file.close unless exception_file.nil?
+      end
+    else
+       @log.error("#{e.message}\n#{e.backtrace.join("\n")}")
+    end
+  end	
 
   # Have the options been parsed
   def parsed_options?
@@ -141,7 +196,7 @@ class POSTFIX_URL_Filter
     # Specify options
     option_parser = OptionParser.new { |opts|
 
-      opts.banner = "Usage:  #$0 [options] AMQP_queue"
+      opts.banner = "Usage:  #$0 [options]"
 
       explanation = <<-EOE
 
@@ -150,21 +205,32 @@ RabbitMQ queue to be later processed.
 
 
 Examples:
-    cat email.eml > main.rb
-    cat email.eml > main.rb jobs
-    cat email.eml > main.rb --host localhost --port 5672 --user quest --password quest jobs
+      POSTFIX_URL_Filter.rb --sendmail --host drone.honeyclient.org \\\\
+        --port 5672 --vhost /collector.testing --user guest \\\\
+        --password guest --exchange events \\\\
+        --routing_key 1.job.create.job.urls.job_alerts \\\\
+        --no-amqp_logging --timeout 100 --use nokogiri
+         
+      POSTFIX_URL_Filter.rb --sendmail --host drone.honeyclient.org \\\\
+        --port 5672 --vhost /collector.testing --user guest \\\\
+        --password guest --exchange events \\\\
+        --routing_key 1.job.create.job.urls.job_alerts \\\\
+        --no-amqp_logging --timeout 100 --use nokogiri \\\\
+        --file ../test/Sample_doc.msg
+         
+      POSTFIX_URL_Filter.rb -h   
       EOE
 
       opts.separator(explanation)
-
       opts.separator('')
       opts.separator('Common options:')
 
       opts.on('-v', '--version', 'display version number and exit.') {output_version ; exit 0 }
-      opts.on("-V", "--[no-]verbose", "run verbosely.") { |v|
-        @options.verbose = v
+      
+      opts.on('-V', '--[no-]verbose', 'run verbosely.') { |boolean|
+        @options.verbose = boolean
       }
-
+      
       opts.on('-h', '--help', 'display this help and exit.') do
         puts opts
         exit
@@ -204,6 +270,10 @@ Examples:
       opts.separator('')
       opts.separator('Actions:');
 
+      opts.on('-S', '--[no-]sendmail', 'Send message onto SendMail.') { |boolean|
+        @options.sendmail = boolean
+      }
+
       opts.on('-l', '--[no-]amqp_logging', 'enable AMQP server interaction logging.') { |boolean|
         @options.amqp_logging = boolean
       }
@@ -216,7 +286,7 @@ Examples:
         @options.ignore_attachments = boolean
       }
 
-      opts.on('-t', '--timeout SECONDS', Integer, 'set a SECONDS timeout for how long the filter should run parsing for URLs. Default is #{@options.timeout}.') { |timeout|
+      opts.on('-t', '--timeout SECONDS', Integer, "set a SECONDS timeout for how long the filter should run parsing for URLs. Default is #{@options.timeout}.") { |timeout|
         @options.timeout = timeout
       }
 
@@ -228,7 +298,7 @@ Examples:
 
     option_parser.parse!(@arguments) rescue return false
 
-    #post_process_options
+    post_process_options
 
     true
   end
@@ -238,7 +308,7 @@ Examples:
     @log.info("Options:")
 
     @options.marshal_dump.each do |name, val|
-      @log.info("  #{name} = #{val}")
+      @log.info("  #{name} = \"#{val}\"")
     end
   end
 
@@ -247,10 +317,16 @@ Examples:
 
   end
 
+  # Post process options
+  def post_process_options
+
+  end
+
+
   # True if required arguments were provided
   def arguments_valid?
 
-    true if ((@arguments.length >= 0) && (@arguments.length <= 1))
+    true 
 
   end
 
@@ -268,23 +344,39 @@ Examples:
 
   # Process the email, pulling out all the unique links and send to AMQP
   # server to be later be processed
-  def process_email(msg_text)
+  def process_email
 
-    @log.debug("#{msg_text}")
-
-    message = RMail::Parser.read(msg_text)
+    message = RMail::Parser.read(@msg_text)
 
     header = message.header
 
     @from = RMail::Address.parse(header['from'])
 
     @subject = header['subject'].to_s
+    
+    @x_count = header['x-count'].to_s # used with Send_mail.rb script
 
     @subject = '(no subject)' if @subject.size == 0
 
     @message_id = (header['Message-ID'] != nil) ? header['Message-ID'] : Guid.new.to_s
 
     @recipients.concat(RMail::Address.parse(header['to']) + RMail::Address.parse(header['cc'])) #RMail::Address.parse(header.match(/^(to|cc)/, //))) Should work, but doesn't.
+
+    #give email as input to the Postfix sendmail command
+    if @options.sendmail
+      sendmail_cmd = "/usr/sbin/sendmail.postfix -G -i #{@from.addresses[0]} "
+
+      @recipients.each { |recipient|
+        sendmail_cmd.concat(recipient.address)
+        sendmail_cmd.concat(" ")
+      }
+
+      sendmail_cmd.chomp(" ")
+
+      @log.debug("sending msg to sendmail...")
+      IO.popen("#{sendmail_cmd}", "w") { |sendmail| sendmail << "#{@msg_text}" }
+      
+    end
 
     message.each_part { |part|
 
@@ -311,30 +403,29 @@ Examples:
 
         if (header['Content-Transfer-Encoding'].downcase.include? 'base64')
 
-          @log.debug('handling base64 attachment...')
-
-          # create unique directory to hold the file for processing, and allow for easy cleanup
-          folder_name = @options.tmp_folder_for_attachments + "/" + Guid.new.to_s
-          Dir.mkdir(folder_name)
-
-          file_name = File.join(folder_name, header['Content-Type'].chomp.split(/;\s*/)[1].split(/\s*=\s*/)[1].gsub(/\"/, ""))
-
-          file = File.new(file_name, 'w')
-
-          file.syswrite(doc.unpack('m')[0]) # base64 decode and write out
-
-          file.close
-
           begin
+            @log.debug('handling base64 attachment...')
+
+            # create unique directory to hold the file for processing, and allow for easy cleanup
+            folder_name = @options.tmp_folder_for_attachments + "/" + Guid.new.to_s
+            Dir.mkdir(folder_name)
+
+            file_name = File.join(folder_name, header['Content-Type'].chomp.split(/;\s*/)[1].split(/\s*=\s*/)[1].gsub(/\"/, ""))
+
+            file = File.new(file_name, 'w')
+
+            file.syswrite(doc.unpack('m')[0]) # base64 decode and write out
+            
             Timeout::timeout(@options.timeout) {
               process_file(file_name)
             }
           rescue Timeout::Error
             @log.info('Processing of attachments has timed out.')
+          ensure
+            # close and clean up temp files
+            file.close unless file.nil?
+            FileUtils.rm_rf(folder_name) unless folder_name.nil?
           end
-
-          # clean up temp files
-          FileUtils.rm_rf(folder_name)
         else
           @log.warn("Unhandled content-transfer-encoding #{header['Content-Transfer-Encoding']}")
         end
@@ -351,8 +442,6 @@ Examples:
 
       end if ((doc.class != NilClass) && (doc.strip != ''))
     } if (message.multipart?)
-  rescue
-    @log.error("#{$!}, email is likely not properly formatted.")
   end
 
   # Process the file
@@ -422,8 +511,15 @@ Examples:
     file_output = `file -kb \"#{file_name}\"`.gsub(/\n/,"")
     
     @log.debug("'file -kb \"#{file_name}\"\' returns \"#{file_output}\", determining file type...")
-    
-    if (file_output.downcase.match(/microsoft/))
+
+    if (file_output.downcase.match(/cdf v2 document/)) 
+       ## TODO: unix-file command is reporting something new for MS Word Docs...
+       ## for now just look at the file extension, til a second pass be
+       ## taken with gnomevfs-info or something else...
+       if (".doc, .ppt, .xls".match(File.extname(file_name)))
+          return 'Microsoft Office Document'
+       end
+    elsif (file_output.downcase.match(/microsoft/))
       return 'Microsoft Office Document'
     elsif (file_output.downcase.match(/opendocument/))
       return 'OpenOffice Document'
@@ -457,11 +553,15 @@ Examples:
   def get_links_from_office_doc(file_name)
     # TODO: Handle Excel documents.
 
+    @log.debug("calling open office to process #{file_name}")
+    	
     # run open office converter macro
     IO.popen("/usr/lib64/openoffice.org3/program/soffice -invisible \"macro:///HoneyClient.Conversion.ConvertToHTML(#{file_name})\"") { |io|
-      @log.info("#{io.read}")  # shouldn't really return anything
+      @log.info("#{io.read}") if @options.verbose  # shouldn't really return anything
     }
 
+    @log.debug("leaving open office call")
+    	
     # handle hmtl, if the doc was ms word-like
     file_name = file_name + '.html'
 
@@ -487,7 +587,6 @@ Examples:
     # strip off dupes
     @log.debug("URL count before compact #{@links.size}")
     @links = @links.uniq.compact
-    @log.debug("Sending #{@links.size} links to amqp server #{@links}...")
 
     time = Time.new
 
@@ -495,6 +594,7 @@ Examples:
     job_source = {}
     job_source['name'] = @message_id
     job_source['protocol'] = 'smtp'
+    job_source['x-count']= @x_count
 
     # create job
     job = {}
@@ -533,37 +633,48 @@ Examples:
 
     #job['job_alerts'] = job_alerts
 
-    # publish message to RabbitMQ
+    @log.info("Publishing #{@links.size} links to AMQP server #{@links}...")    
+    
     EM.run do
-      connection = AMQP.connect(:host => @options.amqp_host, :port => @options.amqp_port,:user => @options.amqp_user, :password => @options.amqp_password, :vhost => @options.amqp_vhost, :logging => @options.amqp_logging)
+      connection = AMQP.connect(:host => @options.amqp_host, :port => @options.amqp_port,:user => @options.amqp_user, :pass => @options.amqp_password, :vhost => @options.amqp_vhost, :logging => @options.amqp_logging)
       channel = MQ.new(connection)
       exchange = MQ::Exchange.new(channel, :topic, @options.amqp_exchange, {:passive => false, :durable => true, :auto_delete => false, :internal => false, :nowait => false})
       queue = MQ::Queue.new(channel, 'events', :durable => true)
       queue.bind(exchange)
-      queue.publish(JSON.pretty_generate job, {:routing_key => '1.job.create.job.urls', :persistent => true})
+#      queue.publish(JSON.pretty_generate job, {:routing_key => @options.amqp_routing_key, :persistent => true})      
+      exchange.publish(JSON.pretty_generate job, {:routing_key => @options.amqp_routing_key, :persistent => true})
       connection.close{ EM.stop }
     end
-
+    
+  rescue Exception => e
+    @log.error("Problem sending message to AMQP server, #{$!}")
   end
 
   # Select the method to parse out links
   def get_links(text)
-    if (@options.use == 'uri')
+    if (@options.use == :uri)
       get_links_with_uri(text)
-    elsif (@options.use == 'hpricot')
+    elsif (@options.use == :hpricot)
       get_links_with_hpricot(text)
-    elsif (@options.use == 'nokogiri')
+    elsif (@options.use == :nokogiri)
       get_links_with_nokogiri(text)
+    else
+      @log.error("Unknown parser #{@options.use} requested!");
     end
   end
 
   # Retrieves all links in the text described by @options.uri_schema
   def get_links_with_uri(text)
-    @log.debug("using URI to extract URLs...")
-
-    URI.extract(text, @options.uri_schemes) {|url|
-      @links.push(url.gsub(/\/$/,'').gsub(/\)$/, '').gsub(/\>/,'')) #TODO: need a better regex
-    }
+    @log.debug("using URI to extract URLs from text in #{text.encoding.name} encoding.")
+           	
+    if ((text.class != NilClass) && (text.strip != ''))
+      URI.extract(text, @options.uri_schemes) {|url|
+        @links.push(url.gsub(/\/$/,'').gsub(/\)$/, '').gsub(/\>/,'')) #TODO: need a better regex
+      }
+    end  
+  rescue Exception => e
+    @log.error("had a problem pulling URL from text, #{$!}, x-count #{@x_count}")
+    raise e
   end
 
   # Get the links from the text using the Hpricot XML/HTML parser
@@ -633,7 +744,7 @@ Examples:
   # Process the standard input
   def process_standard_input
     @log.debug("Processing standard input...")
-    @stdin.read
+    @msg_text = @stdin.read
   end
 
   # Process the file input
@@ -641,7 +752,7 @@ Examples:
     @log.debug("Processing input read from #{@options.file_name}...")
 
     if File.exist?(@options.file_name)
-      File.open(@options.file_name).read
+      @msg_text = File.open(@options.file_name).read
     else
       raise IOError("File not found!")
     end

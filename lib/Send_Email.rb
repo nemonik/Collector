@@ -1,4 +1,6 @@
-# Author::    Michael Joseph Walsh (mailto:mjwalsh@mitre.org)
+#!/usr/local/bin/ruby19
+# Author::    Michael Joseph Walsh (
+# Author::    Michael Joseph Walsh (mailto:mjwalsh_n_o__s_p_a_m@mitre.org)
 # Copyright:: Copyright (c) 2009 The MITRE Corporation.  All Rights Reserved.
 # License::
 
@@ -18,6 +20,8 @@ class Send_Email
     @log.level = Logger::DEBUG
     @log.datetime_format = "%H:%M:%S"
 
+    @msg_count = 0
+
     @log.debug("initialized...")
   end
 
@@ -33,7 +37,7 @@ class Send_Email
 
     @log.debug("Creating text part...")
     text_part = RMail::Message::new
-    text_part.header['Content-Type'] = 'TEXT/PLAIN; format=flowed; charset=US-ASCII'
+    text_part.header['Content-Type'] = 'TEXT/PLAIN; format=flowed; charset=utf-8'
     text_part.body = <<-EOE
 Lorem ipsum dolor sit amet, consectetur adipiscing elit. http://github.com/search?q=rmail&type=Everything&repo=&langOverride=&start_value=1 Nullam tempus vulputate orci a ornare. Aliquam erat volutpat. Duis feugiat ligula quis nunc adipiscing pulvinar. Donec odio libero, lobortis eget condimentum vel, sodales et erat. In hac habitasse platea dictumst. Integer lorem nunc, tempor in iaculis at, interdum a nisl.
 
@@ -154,12 +158,14 @@ EOE
     }
 
     smtp = Net::SMTP.start("localhost.localdomain", 25)
-    @log.debug("Sending message...")
+    @msg_count += 1       
+    message.header['X-Count'] = "#{@msg_count}"
+    @log.debug("Sending message #{@msg_count}...")
     smtp.send_message message.to_s, from, to
     smtp.finish
   end
 
-  def send_all(from, to, path, sleep_ms = 0, attach_max = 1, compress = false)
+  def send_all(from, to, path, sleep_sec = 0, attach_max = 1, compress = false)
 
     filepaths = Array.new
     attach_count = rand(attach_max)
@@ -182,10 +188,13 @@ EOE
           @log.debug("sending #{filepaths}")
           @log.debug("===========================")
           send(from, to, filepaths, compress)
-          if (sleep_ms == -1)
-            sleep(rand())
+          if (sleep_sec == -1)
+            random_sleep_sec = rand()
+            @log.debug("sleeping #{random_sleep_sec} seconds...")
+            sleep(random_sleep_sec)
           else
-            sleep(sleep_ms)
+            @log.debug("sleeping #{sleep_sec} seconds...")
+            sleep(sleep_sec)
           end
           @log.debug("===========================")
           
@@ -197,11 +206,11 @@ EOE
     }
   end
 
-  def keep_sending(from, to, path, sleep_ms = 0, attach_max = 1, compress = false)
+  def keep_sending(from, to, path, sleep_sec = 0, attach_max = 1, compress = false)
     l = 0
     loop do
       @log.debug("starting interation #{l}")
-      send_all(from, to, path, sleep_ms, attach_max, compress)
+      send_all(from, to, path, sleep_sec, attach_max, compress)
       l += 1
     end
   end
@@ -210,6 +219,4 @@ end
 
 sender = Send_Email.new
 #sender.send_all('walsh@localhost.localdomain', 'walsh@localhost.localdomain', '../sample')
-sender.keep_sending('walsh@localhost.localdomain', 'walsh@localhost.localdomain', '../sample', -1, 4, true)
-
-
+sender.keep_sending('walsh@localhost.localdomain', 'walsh@localhost.localdomain', '../sample', 1, 4, true)
