@@ -57,6 +57,15 @@
 # Author::    Michael Joseph Walsh (mailto:mjwalsh_n_o__s_p_a_m@mitre.org)
 # Copyright:: Copyright (c) 2009 The MITRE Corporation.  All Rights Reserved.
 # License::
+#
+# Dependencies:
+#
+# A large number of command-line dependencies including, but not limited to:
+#
+# => yum groupinstall Office/Productivity
+# => yum install openoffice.org-headless
+#
+
 
 $LOAD_PATH << File.dirname(__FILE__)  # hack for now to pick up my Compression module
 
@@ -77,6 +86,7 @@ require 'socket'
 require 'logger'
 require 'Compression'
 require 'timeout'
+require 'open3'
 
 
 class POSTFIX_URL_Filter
@@ -97,12 +107,12 @@ class POSTFIX_URL_Filter
 
     @log = Logger.new('/home/walsh/Development/workspace/postfixUrlParsing/lib/log.txt')
     #@log = Logger.new(STDOUT)
-    @log.level = Logger::DEBUG #INFO ERROR 
+    @log.level = Logger::DEBUG #DEBUG INFO ERROR
     @log.datetime_format = "%H:%M:%S"
 
     # Set defaults
     @options = OpenStruct.new
-    @options.verbose = true  # TODO: change back to 'false'
+    @options.verbose = false
     @options.sendmail = true
     @options.amqp_logging = false
     @options.use = 'nokogiri'
@@ -126,10 +136,17 @@ class POSTFIX_URL_Filter
     if parsed_options?
       if arguments_valid?
 
-        start_time = Time.now
-        @log.info("Start at #{start_time} by #{ENV['USERNAME']}") if @options.verbose
+        username = nil
+        if @options.verbose
+          IO.popen('whoami') { |io|
+            username = io.read 
+          }
 
-        output_options if @options.verbose
+          start_time = Time.now
+          @log.info("Start at #{start_time} by #{username}")
+
+          output_options
+        end
 
         process_arguments
 
@@ -558,18 +575,16 @@ Examples:
     # TODO: Handle Excel documents.
 
     @log.debug("calling open office to process #{file_name}")
-    	
-    # run open office converter macro
-    IO.popen("/usr/lib64/openoffice.org3/program/soffice -invisible \"macro:///HoneyClient.Conversion.ConvertToHTML(#{file_name})\"") { |io|
-    #IO.popen("/usr/lib64/openoffice.org3/program/soffice \"macro:///HoneyClient.Conversion.ConvertToHTML(#{file_name})\"") { |io|
-      io.read  # shouldn't really return anything
+
+    Open3.popen3("/usr/lib64/openoffice.org3/program/soffice -invisible -nologo -headless \"macro:///HoneyClient.Conversion.ConvertToHTML(#{file_name})\"") { |stdin, stdout, stderr|
+      error = stderr.read
+      @log.error("stderr = #{error}") if error
+      out = stdout.read
+      @log.info("stdout = #{out}") if out
     }
-#    system("/usr/lib64/openoffice.org3/program/soffice -invisible \"macro:///HoneyClient.Conversion.ConvertToHTML(#{file_name})\"")
 
     @log.debug("tmp #{File.dirname(file_name)} folder contains")
     Find.find(File.dirname(file_name)) do |f| @log.debug("  -> #{f}") if (f != File.dirname(file_name)) end
-
-    @log.debug("leaving open office call")
  
     # handle hmtl, if the doc was ms word-like
     file_name = file_name + '.html'
@@ -675,12 +690,18 @@ Examples:
   # Retrieves all links in the text described by @options.uri_schema
   def get_links_with_uri(text)
     @log.debug("using URI to extract URLs from text in #{text.encoding.name} encoding.")
-         
+
+    tmp_links = []
+
     if ((!text.nil?) && (!text.strip.empty?))
       URI.extract(text, @options.uri_schemes) {|url|
         url = url.gsub(/\/$/,'').gsub(/\)$/, '').gsub(/\>/,'') #TODO: need a better regex
-        @links.push(url)
+        tmp_links.push(url)
       }
+
+      @log.debug("adding #{tmp_links} containing #{tmp_links.size} URLs to count")
+
+      @links = @links + tmp_links
     end  
   rescue Exception => e
     @log.error("had a problem pulling URL from text, #{$!}, x-count #{@x_count}")
@@ -698,30 +719,30 @@ Examples:
       text = text.gsub(/\sHREF/, ' href')
       text = text.gsub(/\sSRC/, ' src')
 
+      tmp_links = []
+
       # parse HTML content after fixing up content
       html = Hpricot(text, :fixup_tags => true)
       
       # pull URLs from anchor tags
       html.search('//a').map { |a|
-
-        @log.debug("#{a}")
-
         if (a['href'] != nil)
           url = URI.extract(a['href'], @options.uri_schemes)[0]
-          @links.push(url.gsub(/\/$/,'')) if url
+          tmp_links.push(url.gsub(/\/$/,'')) if url
         end
       }
 
       # pull URLs from img tags
       html.search('//img').map { |img|
-
-         @log.debug("#{img}")
-
         if (img['src'] != nil)
           url = URI.extract(img['src'], @options.uri_schemes)[0]
-          @links.push(url.gsub(/\/$/,''))  if url
+          tmp_links.push(url.gsub(/\/$/,''))  if url
         end
       }
+
+      @log.debug("adding #{tmp_links} containing #{tmp_links.size} URLs to count")
+
+      @links = @links + tmp_links
     end
   end
 
@@ -732,12 +753,13 @@ Examples:
 
     if ((!text.nil?) && (!text.strip.nil?))
       html = Nokogiri::HTML(text)
+      tmp_links = []
 
       # pull URLs from anchor tags
       html.xpath('//a').map { |a|
         if (a['href'] != nil)
           url = URI.extract(a['href'], @options.uri_schemes)[0]
-          @links.push(url.gsub(/\/$/,'')) if url
+          tmp_links.push(url.gsub(/\/$/,'')) if url
         end
       }
 
@@ -745,9 +767,13 @@ Examples:
       html.xpath('//img').map { |img|
         if (img['src'] != nil)
           url = URI.extract(img['src'], @options.uri_schemes)[0]
-          @links.push(url.gsub(/\/$/,''))  if url
+          tmp_links.push(url.gsub(/\/$/,''))  if url
         end
       }
+
+      @log.debug("adding #{tmp_links} containing #{tmp_links.size} URLs to count")
+
+      @links = @links + tmp_links
     end
   end
 
