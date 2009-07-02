@@ -97,12 +97,12 @@ class POSTFIX_URL_Filter
 
     @log = Logger.new('/home/walsh/Development/workspace/postfixUrlParsing/lib/log.txt')
     #@log = Logger.new(STDOUT)
-    @log.level = Logger::INFO #DEBUG ERROR 
+    @log.level = Logger::DEBUG #INFO ERROR 
     @log.datetime_format = "%H:%M:%S"
 
     # Set defaults
     @options = OpenStruct.new
-    @options.verbose = false
+    @options.verbose = true  # TODO: change back to 'false'
     @options.sendmail = true
     @options.amqp_logging = false
     @options.use = 'nokogiri'
@@ -127,9 +127,9 @@ class POSTFIX_URL_Filter
       if arguments_valid?
 
         start_time = Time.now
-        @log.info("Start at #{start_time}") if @options.verbose
+        @log.info("Start at #{start_time} by #{ENV['USERNAME']}") if @options.verbose
 
-        output_options if @options.verbos
+        output_options if @options.verbose
 
         process_arguments
 
@@ -166,27 +166,28 @@ class POSTFIX_URL_Filter
   def record_error(e)
     if ((!@message_id.nil?) && (!@message_id.empty?))
       begin
-        @log.error("#{@message_id}\n  -> #{e.backtrace}")
+        @log.error("\"#{e.message}\" for message #{@message_id}\n#{e.backtrace}")
 
-    	  folder_name = File.join(@options.tmp_folder_for_attachments, "bad-msg", @message_id)
+	      @message_id = @message_id.gsub('<', '').gsub('>','')
+      	folder_name = File.join(@options.tmp_folder_for_attachments, 'bad-msg', @message_id)
         Dir.mkdir(folder_name)
 
-        msg_file_name = File.join(folder_name, @message_id + ".msg")
+        msg_file_name = File.join(folder_name, @message_id + '.msg')
 
         msg_file = File.new(msg_file_name, 'w')
         msg_file.syswrite(@msg_text)
         
-        exception_name = File.join(folder_name, @message_id + ".backtrace")
+        exception_name = File.join(folder_name, @message_id + '.backtrace')
         
         exception_file = File.new(exception_name, 'w')
         exception_file.syswrite("#{e.message}\n\n")
-        exception_file.syswrite("#{e.backtrace}")
+        exception_file.syswrite("#{e.backtrace.join("\n")}")
       ensure
         msg_file.close unless msg_file.nil?
         exception_file.close unless exception_file.nil?
       end
     else
-       @log.error("#{e.message}\n#{e.backtrace.join("\n")}")
+       @log.error("#{e.message}\n#{e.backtrace}")
     end
   end	
 
@@ -305,6 +306,7 @@ Examples:
 
   # Dump command-line options
   def output_options
+
     @log.info("Options:")
 
     @options.marshal_dump.each do |name, val|
@@ -345,6 +347,8 @@ Examples:
   # Process the email, pulling out all the unique links and send to AMQP
   # server to be later be processed
   def process_email
+
+    #@log.debug("#{@msg_text}")
 
     message = RMail::Parser.read(@msg_text)
 
@@ -403,28 +407,28 @@ Examples:
 
         if (header['Content-Transfer-Encoding'].downcase.include? 'base64')
 
+          @log.debug('handling base64 attachment...')
+
+          # create unique directory to hold the file for processing, and allow for easy cleanup
+          folder_name = @options.tmp_folder_for_attachments + "/" + Guid.new.to_s
+          Dir.mkdir(folder_name)
+
+          file_name = File.join(folder_name, header['Content-Type'].chomp.split(/;\s*/)[1].split(/\s*=\s*/)[1].gsub(/\"/, ""))
+
+          file = File.new(file_name, 'w')
+          file.syswrite(doc.unpack('m')[0]) # base64 decode and write out
+          file.close
+
           begin
-            @log.debug('handling base64 attachment...')
-
-            # create unique directory to hold the file for processing, and allow for easy cleanup
-            folder_name = @options.tmp_folder_for_attachments + "/" + Guid.new.to_s
-            Dir.mkdir(folder_name)
-
-            file_name = File.join(folder_name, header['Content-Type'].chomp.split(/;\s*/)[1].split(/\s*=\s*/)[1].gsub(/\"/, ""))
-
-            file = File.new(file_name, 'w')
-
-            file.syswrite(doc.unpack('m')[0]) # base64 decode and write out
-            
             Timeout::timeout(@options.timeout) {
               process_file(file_name)
             }
           rescue Timeout::Error
+
             @log.info('Processing of attachments has timed out.')
+
           ensure
-            # close and clean up temp files
-            file.close unless file.nil?
-            FileUtils.rm_rf(folder_name) unless folder_name.nil?
+            FileUtils.rm_rf(folder_name) #unless folder_name.nil?
           end
         else
           @log.warn("Unhandled content-transfer-encoding #{header['Content-Transfer-Encoding']}")
@@ -557,11 +561,16 @@ Examples:
     	
     # run open office converter macro
     IO.popen("/usr/lib64/openoffice.org3/program/soffice -invisible \"macro:///HoneyClient.Conversion.ConvertToHTML(#{file_name})\"") { |io|
-      @log.info("#{io.read}") if @options.verbose  # shouldn't really return anything
+    #IO.popen("/usr/lib64/openoffice.org3/program/soffice \"macro:///HoneyClient.Conversion.ConvertToHTML(#{file_name})\"") { |io|
+      io.read  # shouldn't really return anything
     }
+#    system("/usr/lib64/openoffice.org3/program/soffice -invisible \"macro:///HoneyClient.Conversion.ConvertToHTML(#{file_name})\"")
+
+    @log.debug("tmp #{File.dirname(file_name)} folder contains")
+    Find.find(File.dirname(file_name)) do |f| @log.debug("  -> #{f}") if (f != File.dirname(file_name)) end
 
     @log.debug("leaving open office call")
-    	
+ 
     # handle hmtl, if the doc was ms word-like
     file_name = file_name + '.html'
 
@@ -666,10 +675,11 @@ Examples:
   # Retrieves all links in the text described by @options.uri_schema
   def get_links_with_uri(text)
     @log.debug("using URI to extract URLs from text in #{text.encoding.name} encoding.")
-           	
-    if ((text.class != NilClass) && (text.strip != ''))
+         
+    if ((!text.nil?) && (!text.strip.empty?))
       URI.extract(text, @options.uri_schemes) {|url|
-        @links.push(url.gsub(/\/$/,'').gsub(/\)$/, '').gsub(/\>/,'')) #TODO: need a better regex
+        url = url.gsub(/\/$/,'').gsub(/\)$/, '').gsub(/\>/,'') #TODO: need a better regex
+        @links.push(url)
       }
     end  
   rescue Exception => e
@@ -682,7 +692,7 @@ Examples:
 
     @log.debug("using hpricot to parse...")
 
-    if ((text.class != NilClass) && (text.strip != ''))
+    if ((!text.nil?) && (!text.strip.empty?))
       # the version of hpricot I developed against
       # is not attribute case insensitive
       text = text.gsub(/\sHREF/, ' href')
@@ -720,7 +730,7 @@ Examples:
 
     @log.debug("using nokogiri to parse...")
 
-    if ((text.class != NilClass) && (text.strip != ''))
+    if ((!text.nil?) && (!text.strip.nil?))
       html = Nokogiri::HTML(text)
 
       # pull URLs from anchor tags
