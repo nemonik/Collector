@@ -4,13 +4,7 @@
 #   A POSTFIX script that filters email for URLs and sends the URLs off to
 #   RabbitMQ queue to be later processed.
 #
-# == Usage:  postfix_url_filter.rb [options] AMQP_queue
-#
-# Usage:  ./POSTFIX_URL_Filter.rb [options]
-#
-# A POSTFIX script that filters email for URLs and sends the URLs off to
-# RabbitMQ queue to be later processed.
-#
+# == Usage:  ./POSTFIX_URL_Filter.rb [options]
 #
 # Examples:
 #      POSTFIX_URL_Filter.rb --sendmail --host drone.honeyclient.org \\
@@ -62,8 +56,10 @@
 #
 # A large number of command-line dependencies including, but not limited to:
 #
-# => yum groupinstall Office/Productivity
-# => yum install openoffice.org-headless
+# => yum install openoffice.org-base openoffice.org-writer openoffice.org-calc
+#       openoffice.org-impress openoffice.org-draw openoffice.org-math
+#       openoffice.org-headless mscore-mscore-fonts pstoedit libpaper
+#       
 #
 
 
@@ -86,7 +82,9 @@ require 'socket'
 require 'logger'
 require 'Compression'
 require 'timeout'
-require 'open3'
+#require 'open3'
+require 'net/http'
+require 'uri'
 
 
 class POSTFIX_URL_Filter
@@ -105,8 +103,8 @@ class POSTFIX_URL_Filter
     @links = []
     @x_count = "" # used inconjunction with Send_Email.rb script.
 
-    @log = Logger.new('/home/walsh/Development/workspace/postfixUrlParsing/lib/log.txt')
-    #@log = Logger.new(STDOUT)
+    #@log = Logger.new('/home/walsh/Development/workspace/postfixUrlParsing/lib/log.txt')
+    @log = Logger.new(STDOUT)
     @log.level = Logger::DEBUG #DEBUG INFO ERROR
     @log.datetime_format = "%H:%M:%S"
 
@@ -470,29 +468,73 @@ Examples:
 
     @log.debug("writing file #{file_name}...")
 
-    file_type = mime_shared_info(file_name)
+    info = mime_shared_info(file_name)
 
-    @log.debug("file is  \"#{file_type}\"...")
+    @log.debug("info  \"#{info}\"...")
 
-    if ('Microsoft Office Document, OpenOffice Document, Microsoft Office Open XML Format Document'.match("#{file_type}"))
-      get_links_from_office_doc(file_name)
-    elsif (file_type == 'PDF Document')
+    if (info[0] == 'application/pdf')
       get_links_with_uri(`pdftotext #{file_name} /dev/stdout`)
-    elsif (file_type == 'text')
+
+    elsif ('application/rtf, text/plain'.include?(info[0]))
       get_links_with_uri(File.open(file_name).read)
-    elsif (file_type == 'XML document')
+
+    elsif ('text/html, application/xml'.include?(info[0]))
       get_links(File.open(file_name).read)
-    elsif (file_type == 'Zip archive')
-      process_compressed(file_name, 'zip')
-    elsif (file_type == 'gzip compressed data')
-      process_compressed(file_name, 'gzip')
-    elsif (file_type == 'bzip2 compressed data')
+
+    elsif (info[0] == 'application/zip')
+      process_compressed(file_name, 'application/zip')
+
+    elsif (info[0].include?('application/x-gzip'))
+      process_compressed(file_name, 'application/x-gzip')
+
+    elsif (info[0].include?('application/x-bzip'))
       process_compressed(file_name, 'bzip2')
-    elsif (file_type == 'tar archive')
-      process_compressed(file_name, 'tar')
+
+    elsif (info[0] == 'application/x-tar')
+      process_compressed(file_name, 'application/x-tar')
+
+    elsif (info[1].include?('openoffice.org-impress'))
+      # presentation docs cannot be convert straight to html, but
+      # instead need a two step process of first being converted to
+      # and then to html
+      if (pdf = process_office_doc(file_name, info, 'application/pdf'))
+        file_name = file_name + '.pdf'
+        File.open(file_name, 'wb') {|f|
+          f.write(pdf)
+        }
+        get_links_with_uri(`pdftotext #{file_name} /dev/stdout`)
+      end
+
+    elsif (info[1].include?('openoffice'))
+      html = process_office_doc(file_name, info, 'text/html')
+      get_links(html) if html
+
     else
       @log.error("Unhandled file type of \"#{file_type}\"")
     end
+
+  end
+
+  # Get the links from the MS Office or OpenOffice document
+  def process_office_doc(file_name, info, accept)
+    # TODO: Handle Excel documents.
+
+    @log.debug("calling open office to process #{file_name}")
+
+    headers = {
+      'Content-Type' => info[0],
+      'Accept' => accept
+    }
+
+    url = URI.parse('http://localhost:8080/converter/service')
+    request = Net::HTTP::Post.new(url.path, headers)
+    request.body = File.open(file_name,"rb") {|io| io.read}
+
+    response = Net::HTTP.start(url.host, url.port) {|http|
+      response = http.request(request)
+    }
+
+    return response.body
 
   end
 
@@ -503,16 +545,20 @@ Examples:
 
     @log.debug("processing #{compression} compressed #{file_name}...")
 
-    if (compression == 'zip')
+    if (compression == 'application/zip')
       Compression.unzip(file_name, dst)
       FileUtils.rm(file_name)
-    elsif (compression == 'gzip')
+
+    elsif (compression == 'application/x-gzip')
       Compression.gunzip(file_name)
-    elsif (compression == 'bzip2')
+    
+    elsif (compression == 'application/x-bzip')
       Compression.bunzip2(file_name)
-    elsif (compression == 'tar')
+    
+    elsif (compression == 'application/x-tar')
       Compression.untar(file_name, dst)
       FileUtils.rm(file_name)
+
     else
       @log.error("#{compression} unhandled form of compression")
     end
@@ -528,81 +574,28 @@ Examples:
 
   # Determine the mimetype of the file
   def mime_shared_info(file_name)
+    #Name              : Sample.doc
+    #Type              : Regular
+    #MIME type         : application/msword
+    #Default app       : openoffice.org-writer.desktop
 
-    file_output = `file -kb \"#{file_name}\"`.gsub(/\n/,"")
-    
-    @log.debug("'file -kb \"#{file_name}\"\' returns \"#{file_output}\", determining file type...")
+    info = []
 
-    if (file_output.downcase.match(/cdf v2 document/)) 
-       ## TODO: unix-file command is reporting something new for MS Word Docs...
-       ## for now just look at the file extension, til a second pass be
-       ## taken with gnomevfs-info or something else...
-       if (".doc, .ppt, .xls".match(File.extname(file_name)))
-          return 'Microsoft Office Document'
-       end
-    elsif (file_output.downcase.match(/microsoft/))
-      return 'Microsoft Office Document'
-    elsif (file_output.downcase.match(/opendocument/))
-      return 'OpenOffice Document'
-    elsif (file_output.downcase.match(/pdf/))
-      return 'PDF Document'
-    elsif (file_output.downcase.match(/xml/))
-      return 'XML document'
-    elsif (file_output.downcase.match(/text/))
-      return 'text'
-    elsif (file_output.downcase.match(/zip archive data/))
+    IO.popen("gnomevfs-info \"#{file_name}\"") { |stdout|
 
-      @log.debug("determining file type from file extension...")
-      
-      # Determine if Office Open XML format
-      if (".pptx, .docx, .xlsx".match(File.extname(file_name)))
-        return 'Microsoft Office Open XML Format Document'
-      else
-        return 'Zip archive'
-      end
-
-    elsif (file_output.downcase.match(/gzip compressed data/))
-      return 'gzip compressed data'
-    elsif (file_output.downcase.match(/tar archive/))
-      return 'tar archive'
-    elsif (file_output.downcase.match(/bzip2 compressed data/))
-      return 'bzip2 compressed data'
-    end
-  end
-
-  # Get the links from the MS Office or OpenOffice document
-  def get_links_from_office_doc(file_name)
-    # TODO: Handle Excel documents.
-
-    @log.debug("calling open office to process #{file_name}")
-
-    Open3.popen3("/usr/lib64/openoffice.org3/program/soffice -invisible -nologo -headless \"macro:///HoneyClient.Conversion.ConvertToHTML(#{file_name})\"") { |stdin, stdout, stderr|
-      error = stderr.read
-      @log.error("stderr = #{error}") if error
-      out = stdout.read
-      @log.info("stdout = #{out}") if out
-    }
-
-    @log.debug("tmp #{File.dirname(file_name)} folder contains")
-    Find.find(File.dirname(file_name)) do |f| @log.debug("  -> #{f}") if (f != File.dirname(file_name)) end
- 
-    # handle hmtl, if the doc was ms word-like
-    file_name = file_name + '.html'
-
-    if File.exists?(file_name)
-      @log.debug("reading #{file_name}")
-      get_links(File.open(file_name).read)
-    end
-
-    # handle html, if the doc was ms powerpoint-like
-    folder_name = File.dirname(file_name)
-    Dir.foreach(folder_name) {|f|
-      file_name = File.join(folder_name, f)
-      if ((f.match(/^text/)) && (f.match(/.html$/)))
-        @log.debug("reading #{file_name}")
-        get_links(File.open(file_name).read)
+      if (out = stdout.read)
+        out.split(/\n/).each {|line|
+          pair = line.split(':')
+          name = pair[0].strip!;
+          if ('MIME type, Default app'.include?(name))
+            info.push(pair[1].strip!)
+            break if name == 'Default app'
+          end
+        }
       end
     }
+
+    return info
   end
 
   # Send the links off to AMQP exchange/queue
