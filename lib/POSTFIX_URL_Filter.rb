@@ -85,6 +85,7 @@ require 'timeout'
 #require 'open3'
 require 'net/http'
 require 'uri'
+require 'iconv'
 
 
 class POSTFIX_URL_Filter
@@ -103,8 +104,8 @@ class POSTFIX_URL_Filter
     @links = []
     @x_count = "" # used inconjunction with Send_Email.rb script.
 
-    #@log = Logger.new('/home/walsh/Development/workspace/postfixUrlParsing/lib/log.txt')
-    @log = Logger.new(STDOUT)
+    @log = Logger.new('/home/walsh/Development/workspace/postfixUrlParsing/lib/log.txt')
+    #@log = Logger.new(STDOUT)
     @log.level = Logger::DEBUG #DEBUG INFO ERROR
     @log.datetime_format = "%H:%M:%S"
 
@@ -392,7 +393,7 @@ Examples:
 
       sendmail_cmd.chomp(" ")
 
-      @log.debug("sending msg to sendmail...")
+      @log.debug("sending msg #{@message_id} to sendmail...")
       IO.popen("#{sendmail_cmd}", "w") { |sendmail| sendmail << "#{@msg_text}" }
       
     end
@@ -470,12 +471,17 @@ Examples:
 
     info = mime_shared_info(file_name)
 
-    @log.debug("info  \"#{info}\"...")
+    @log.debug("info = #{info}")
 
     if (info[0] == 'application/pdf')
-      get_links_with_uri(`pdftotext #{file_name} /dev/stdout`)
+        out = nil
+        IO.popen("pdftotext #{file_name} /dev/stdout") {|stdout|
+          out = stdout.read
+        }
 
-    elsif ('application/rtf, text/plain'.include?(info[0]))
+        get_links_with_uri(out)
+
+    elsif ('application/rtf, text/plain, text/csv'.include?(info[0]))
       get_links_with_uri(File.open(file_name).read)
 
     elsif ('text/html, application/xml'.include?(info[0]))
@@ -484,11 +490,11 @@ Examples:
     elsif (info[0] == 'application/zip')
       process_compressed(file_name, 'application/zip')
 
-    elsif (info[0].include?('application/x-gzip'))
+    elsif ('application/x-compressed-tar, application/x-gzip'.include?(info[0]) || info[0].include?('application/x-gz'))
       process_compressed(file_name, 'application/x-gzip')
 
-    elsif (info[0].include?('application/x-bzip'))
-      process_compressed(file_name, 'bzip2')
+    elsif (info[0].include?('application/x-bz'))
+      process_compressed(file_name, 'application/x-bzip')
 
     elsif (info[0] == 'application/x-tar')
       process_compressed(file_name, 'application/x-tar')
@@ -496,13 +502,19 @@ Examples:
     elsif (info[1].include?('openoffice.org-impress'))
       # presentation docs cannot be convert straight to html, but
       # instead need a two step process of first being converted to
-      # and then to html
+      # ms-word and then to html
       if (pdf = process_office_doc(file_name, info, 'application/pdf'))
         file_name = file_name + '.pdf'
         File.open(file_name, 'wb') {|f|
           f.write(pdf)
         }
-        get_links_with_uri(`pdftotext #{file_name} /dev/stdout`)
+
+        out = nil
+        IO.popen("pdftotext #{file_name} /dev/stdout") {|stdout|
+          out = stdout.read
+        }
+
+        get_links_with_uri(out)
       end
 
     elsif (info[1].include?('openoffice'))
@@ -510,7 +522,7 @@ Examples:
       get_links(html) if html
 
     else
-      @log.error("Unhandled file type of \"#{file_type}\"")
+      @log.error("Unhandled file type of \"#{info}\"")
     end
 
   end
@@ -519,8 +531,9 @@ Examples:
   def process_office_doc(file_name, info, accept)
     # TODO: Handle Excel documents.
 
-    @log.debug("calling open office to process #{file_name}")
+    @log.debug("calling OOo web service to process #{file_name}")
 
+    start = Time.now if (@log.level == Logger::DEBUG)
     headers = {
       'Content-Type' => info[0],
       'Accept' => accept
@@ -533,6 +546,11 @@ Examples:
     response = Net::HTTP.start(url.host, url.port) {|http|
       response = http.request(request)
     }
+
+    if (@log.level == Logger::DEBUG)
+      stop = Time.now
+      @log.debug("OOo web service responded in #{stop-start} seconds.")
+    end
 
     return response.body
 
@@ -682,7 +700,12 @@ Examples:
 
   # Retrieves all links in the text described by @options.uri_schema
   def get_links_with_uri(text)
-    @log.debug("using URI to extract URLs from text in #{text.encoding.name} encoding.")
+
+    @log.debug("using URI extract to parse...")
+
+    # cleanup encoding...
+    ic = Iconv.new("#{text.encoding.name}//IGNORE", "#{text.encoding.name}")
+    text = ic.iconv(text + ' ')[0..-2] 
 
     tmp_links = []
 
@@ -697,7 +720,8 @@ Examples:
       @links = @links + tmp_links
     end  
   rescue Exception => e
-    @log.error("had a problem pulling URL from text, #{$!}, x-count #{@x_count}")
+    @log.error("had a problem pulling URL from text, #{e.message}, x-count #{@x_count}")
+    @log.error("-------------------------------------------------------------------------------\n#{text}\n-------------------------------------------------------------------------------")
     raise e
   end
 

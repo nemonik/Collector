@@ -28,7 +28,7 @@ class DEBUG
     # Set defaults
     @options = OpenStruct.new
     @options.amqp_host = 'localhost'
-    @options.amqp_port = '5672'
+    @options.amqp_port =  5672
     @options.amqp_vhost = '/honeyclient.org'
     @options.amqp_routing_key = '1.job.create.#'
     @options.amqp_user = 'guest'
@@ -43,6 +43,7 @@ class DEBUG
         output_options                                      
         process_arguments
 
+        puts 'starting'
         # read JSON message off AMQP exchange/queue
         EM.run do
           connection = AMQP.connect(:host => @options.amqp_host, :port => @options.amqp_port,
@@ -59,11 +60,12 @@ class DEBUG
           queue.bind(exchange, :key => @options.amqp_routing_key) 
         
           queue.subscribe(:ack => true, :nowait => false) do |header, msg|
+            header.ack
             puts '==============================================================================='          
             pp header
             puts '==============================================================================='                      
             puts msg
-            puts '-------------------------------------------------------------------------------'             
+            puts '-------------------------------------------------------------------------------'            
           end
         
         end
@@ -87,12 +89,11 @@ A script to subscribe to a RabbitMQ exchange and print out JSON messages for
 debug purposes.
 
 Examples:
-      debug.rb --host drone.honeyclient.org --port 5672 \\\\
+      DEBUGrb --host drone.honeyclient.org --port 5672 \\\\
         --vhost /collector.testing --user guest --password guest \\\\
         --exchange events --routing_key 1.job.create.job.urls.job_alerts \\\\\
-        --no-amqp_logging 
                                                                                                       
-      debug.rb -h   
+      DEBUG.rb -h   
       EOE
                                                                                                                            
       opts.separator(explanation)
