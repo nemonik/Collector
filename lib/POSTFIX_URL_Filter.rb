@@ -105,7 +105,7 @@ class POSTFIX_URL_Filter
     @x_count = "" # used inconjunction with Send_Email.rb script.
 
     @log = Logger.new('/home/walsh/Development/workspace/postfixUrlParsing/lib/log.txt')
-    #@log = Logger.new(STDOUT)
+    @@log = Logger.new(STDOUT)
     @log.level = Logger::DEBUG #DEBUG INFO ERROR
     @log.datetime_format = "%H:%M:%S"
 
@@ -398,70 +398,76 @@ Examples:
       
     end
 
-    message.each_part { |part|
+    if (message.multipart?)
+      message.each_part { |part|
 
-      header = part.header
+        header = part.header
 
-      doc = (header['Content-Transfer-Encoding'] == 'quoted-printable') ? part.body.unpack('M')[0] : part.body
+        @log.debug("Content-Transfer-Encoding is #{header['Content-Transfer-Encoding']}")
 
-      @log.debug('====================')
+        doc = (header['Content-Transfer-Encoding'] == 'quoted-printable') ? part.body.unpack('M')[0] : part.body
 
-      if ((header['Content-Type'].downcase.include? 'text/plain') && (!header.has_key?('Content-Disposition')))
+        @log.debug('====================')
 
-        @log.debug('handling plain text part...')
+        if ((header['Content-Type'].downcase.include? 'text/plain') && (!header.has_key?('Content-Disposition')))
 
-        get_links_with_uri(doc)
+          @log.debug('handling plain text part...')
 
-      elsif ((header['Content-Type'].downcase.include? 'text/html') && (!header.has_key?('Content-Disposition')))
-        @log.debug('handling html part...')
+          get_links_with_uri(doc)
 
-        get_links(doc)
+        elsif ((header['Content-Type'].downcase.include? 'text/html') && (!header.has_key?('Content-Disposition')))
+          @log.debug('handling html part...')
 
-      elsif ((header.has_key?('Content-Disposition')) && (header['Content-Disposition'].downcase.include? 'attachment') && (!@options.ignore_attachments))
+          get_links(doc)
 
-        @log.debug('message has an attachment...')
+        elsif ((header.has_key?('Content-Disposition')) && (header['Content-Disposition'].downcase.include? 'attachment') && (!@options.ignore_attachments))
 
-        if (header['Content-Transfer-Encoding'].downcase.include? 'base64')
+          @log.debug('message has an attachment...')
 
-          @log.debug('handling base64 attachment...')
+          if (header['Content-Transfer-Encoding'].downcase.include? 'base64')
 
-          # create unique directory to hold the file for processing, and allow for easy cleanup
-          folder_name = @options.tmp_folder_for_attachments + "/" + Guid.new.to_s
-          Dir.mkdir(folder_name)
+            @log.debug('handling base64 attachment...')
 
-          file_name = File.join(folder_name, header['Content-Type'].chomp.split(/;\s*/)[1].split(/\s*=\s*/)[1].gsub(/\"/, ""))
+            # create unique directory to hold the file for processing, and allow for easy cleanup
+            folder_name = @options.tmp_folder_for_attachments + "/" + Guid.new.to_s
+            Dir.mkdir(folder_name)
 
-          file = File.new(file_name, 'w')
-          file.syswrite(doc.unpack('m')[0]) # base64 decode and write out
-          file.close
+            file_name = File.join(folder_name, header['Content-Type'].chomp.split(/;\s*/)[1].split(/\s*=\s*/)[1].gsub(/\"/, ""))
 
-          begin
-            Timeout::timeout(@options.timeout) {
-              process_file(file_name)
-            }
-          rescue Timeout::Error
+            file = File.new(file_name, 'w')
+            file.syswrite(doc.unpack('m')[0]) # base64 decode and write out
+            file.close
 
-            @log.info('Processing of attachments has timed out.')
+            begin
+              Timeout::timeout(@options.timeout) {
+                process_file(file_name)
+              }
+            rescue Timeout::Error
 
-          ensure
-            FileUtils.rm_rf(folder_name) #unless folder_name.nil?
+              @log.info('Processing of attachments has timed out.')
+
+            ensure
+              FileUtils.rm_rf(folder_name) #unless folder_name.nil?
+            end
+          else
+            @log.warn("Unhandled content-transfer-encoding #{header['Content-Transfer-Encoding']}")
           end
-        else
-          @log.warn("Unhandled content-transfer-encoding #{header['Content-Transfer-Encoding']}")
-        end
 
-      elsif (header['Content-Type'].downcase.include? 'message/rfc822')
+        elsif (header['Content-Type'].downcase.include? 'message/rfc822')
 
-        @log.debug('handling forwarded email...')
+          @log.debug('handling forwarded email...')
 
-        process_email(doc)
+          process_email(doc)
 
-      else # handle unknown content-type
+        else # handle unknown content-type
 
-        @log.warn("Unhandled content-type #{header['Content-Type']}")
+          @log.warn("Unhandled content-type #{header['Content-Type']}")
 
-      end if ((doc.class != NilClass) && (doc.strip != ''))
-    } if (message.multipart?)
+        end if ((doc.class != NilClass) && (doc.strip != ''))
+      }
+    else
+      get_links_with_uri(message.body)
+    end
   end
 
   # Process the file
@@ -623,64 +629,66 @@ Examples:
     @log.debug("URL count before compact #{@links.size}")
     @links = @links.uniq.compact
 
-    time = Time.new
+    if (@links.size > 0)
+      time = Time.new
 
-    # create job_source
-    job_source = {}
-    job_source['name'] = @message_id
-    job_source['protocol'] = 'smtp'
-    job_source['x-count']= @x_count
+      # create job_source
+      job_source = {}
+      job_source['name'] = @message_id
+      job_source['protocol'] = 'smtp'
+      job_source['x-count']= @x_count
 
-    # create job
-    job = {}
-    job['uid'] = Guid.new.to_s
-    job['url_count'] = @links.size
-    job['created_at'] = time
-    job['update_at'] = time
-    job['job_source'] = job_source
+      # create job
+      job = {}
+      job['uid'] = Guid.new.to_s
+      job['url_count'] = @links.size
+      job['created_at'] = time
+      job['update_at'] = time
+      job['job_source'] = job_source
 
-    urls = []
+      urls = []
 
-    url_status = {}
-    url_status['satus'] = 'queued'
+      url_status = {}
+      url_status['satus'] = 'queued'
 
-    @links.map {|link|
-      url = {}
-      url['url'] = link
-      url['priority'] = 1
-      url['url_status'] = url_status
+      @links.map {|link|
+        url = {}
+        url['url'] = link
+        url['priority'] = 1
+        url['url_status'] = url_status
 
-      urls.push(url)
-    }
+        urls.push(url)
+      }
 
-    job['urls'] = urls
+      job['urls'] = urls
 
-    job_alerts = []
+      job_alerts = []
 
-    # foreach recipient create a job_alert and add
-    @recipients.each { |recipient|
-      job_alert = {}
-      job_alert['protocol'] = 'smtp'
-      job_alert['address'] = recipient.address
+      # foreach recipient create a job_alert and add
+      @recipients.each { |recipient|
+        job_alert = {}
+        job_alert['protocol'] = 'smtp'
+        job_alert['address'] = recipient.address
 
-      job_alerts.push(job_alert)
-    }
+        job_alerts.push(job_alert)
+      }
 
-    #job['job_alerts'] = job_alerts
+      #job['job_alerts'] = job_alerts
 
-    @log.info("Publishing #{@links.size} links to AMQP server #{@links}...")    
-    
-    EM.run do
-      connection = AMQP.connect(:host => @options.amqp_host, :port => @options.amqp_port,:user => @options.amqp_user, :pass => @options.amqp_password, :vhost => @options.amqp_vhost, :logging => @options.amqp_logging)
-      channel = MQ.new(connection)
-      exchange = MQ::Exchange.new(channel, :topic, @options.amqp_exchange, {:passive => false, :durable => true, :auto_delete => false, :internal => false, :nowait => false})
-      queue = MQ::Queue.new(channel, 'events', :durable => true)
-      queue.bind(exchange)
-#      queue.publish(JSON.pretty_generate job, {:routing_key => @options.amqp_routing_key, :persistent => true})      
-      exchange.publish(JSON.pretty_generate job, {:routing_key => @options.amqp_routing_key, :persistent => true})
-      connection.close{ EM.stop }
+      @log.info("Publishing #{@links.size} links to AMQP server #{@links}...")
+
+      EM.run do
+        connection = AMQP.connect(:host => @options.amqp_host, :port => @options.amqp_port,:user => @options.amqp_user, :pass => @options.amqp_password, :vhost => @options.amqp_vhost, :logging => @options.amqp_logging)
+        channel = MQ.new(connection)
+        exchange = MQ::Exchange.new(channel, :topic, @options.amqp_exchange, {:key=> @options.amqp_routing_key, :passive => false, :durable => true, :auto_delete => false, :internal => false, :nowait => false})
+  #      queue = MQ::Queue.new(channel, 'events', :durable => true)
+  #      queue.bind(exchange)
+  #      queue.publish(JSON.pretty_generate job, {:routing_key => @options.amqp_routing_key, :persistent => true})
+  #      exchange.publish(JSON.pretty_generate job, {:routing_key => @options.amqp_routing_key, :persistent => true})
+        exchange.publish(JSON.pretty_generate job, {:persistent => true})
+        connection.close{ EM.stop }
+      end
     end
-    
   rescue Exception => e
     @log.error("Problem sending message to AMQP server, #{$!}")
   end

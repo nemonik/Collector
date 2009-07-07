@@ -220,4 +220,4 @@ end
 sender = Send_Email.new
 #sender.send_all('walsh@localhost.localdomain', 'walsh@localhost.localdomain', '../sample')
 #sender.send_all('walsh@localhost.localdomain', 'walsh@localhost.localdomain', '../sample-bad')
-sender.keep_sending('walsh@localhost.localdomain', 'walsh@localhost.localdomain', '../sample', 10, 4, true)
+sender.keep_sending('walsh@localhost.localdomain', 'walsh@localhost.localdomain', '../sample', 1, 4, true)

@@ -60,7 +60,7 @@ class DEBUG
           queue.bind(exchange, :key => @options.amqp_routing_key) 
         
           queue.subscribe(:ack => true, :nowait => false) do |header, msg|
-            header.ack
+#            header.ack
             puts '==============================================================================='          
             pp header
             puts '==============================================================================='                      
