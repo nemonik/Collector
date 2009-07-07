@@ -105,7 +105,7 @@ class POSTFIX_URL_Filter
     @x_count = "" # used inconjunction with Send_Email.rb script.
 
     @log = Logger.new('/home/walsh/Development/workspace/postfixUrlParsing/lib/log.txt')
-    @@log = Logger.new(STDOUT)
+    #@log = Logger.new(STDOUT)
     @log.level = Logger::DEBUG #DEBUG INFO ERROR
     @log.datetime_format = "%H:%M:%S"
 
@@ -402,8 +402,6 @@ Examples:
       message.each_part { |part|
 
         header = part.header
-
-        @log.debug("Content-Transfer-Encoding is #{header['Content-Transfer-Encoding']}")
 
         doc = (header['Content-Transfer-Encoding'] == 'quoted-printable') ? part.body.unpack('M')[0] : part.body
 
