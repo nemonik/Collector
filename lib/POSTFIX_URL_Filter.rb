@@ -636,20 +636,19 @@ Examples:
       job_source = {}
       job_source['name'] = @message_id
       job_source['protocol'] = 'smtp'
-      job_source['x-count']= @x_count
+      job_source['x_count']= @x_count
 
       # create job
       job = {}
-      job['uid'] = Guid.new.to_s
+      job['uuid'] = Guid.new.to_s
       job['url_count'] = @links.size
       job['created_at'] = time
-      job['update_at'] = time
       job['job_source'] = job_source
 
       urls = []
 
       url_status = {}
-      url_status['satus'] = 'queued'
+      url_status['status'] = 'queued'
 
       @links.map {|link|
         url = {}
@@ -675,6 +674,9 @@ Examples:
 
       #job['job_alerts'] = job_alerts
 
+      wrapper = {}
+      wrapper['job'] = job
+
       @log.info("Publishing #{@links.size} links to AMQP server #{@links}...")
 
       EM.run do
@@ -685,7 +687,7 @@ Examples:
   #      queue.bind(exchange)
   #      queue.publish(JSON.pretty_generate job, {:routing_key => @options.amqp_routing_key, :persistent => true})
   #      exchange.publish(JSON.pretty_generate job, {:routing_key => @options.amqp_routing_key, :persistent => true})
-        exchange.publish(JSON.pretty_generate job, {:persistent => true})
+        exchange.publish(JSON.pretty_generate wrapper, {:persistent => true})
         connection.close{ EM.stop }
       end
     end
