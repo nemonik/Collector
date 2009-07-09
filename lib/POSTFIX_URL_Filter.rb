@@ -84,7 +84,6 @@ require 'Compression'
 require 'timeout'
 #require 'open3'
 require 'net/http'
-require 'uri'
 require 'iconv'
 
 
@@ -106,7 +105,7 @@ class POSTFIX_URL_Filter
 
     @log = Logger.new('/home/walsh/Development/workspace/postfixUrlParsing/lib/log.txt')
     #@log = Logger.new(STDOUT)
-    @log.level = Logger::DEBUG #DEBUG INFO ERROR
+    @log.level = Logger::INFO #DEBUG INFO ERROR
     @log.datetime_format = "%H:%M:%S"
 
     # Set defaults
