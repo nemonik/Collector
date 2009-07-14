@@ -85,6 +85,7 @@ require 'timeout'
 #require 'open3'
 require 'net/http'
 require 'iconv'
+require 'net/telnet'
 
 
 class POSTFIX_URL_Filter
@@ -202,7 +203,7 @@ class POSTFIX_URL_Filter
         exception_file.close unless exception_file.nil?
       end
     else
-       @log.error("#{e.message}\n#{e.backtrace}")
+      @log.error("#{e.message}\n#{e.backtrace}")
     end
   end	
 
@@ -477,12 +478,12 @@ Examples:
     @log.debug("info = #{info}")
 
     if (info[0] == 'application/pdf')
-        out = nil
-        IO.popen("pdftotext #{file_name} /dev/stdout") {|stdout|
-          out = stdout.read
-        }
+      out = nil
+      IO.popen("pdftotext #{file_name} /dev/stdout") {|stdout|
+        out = stdout.read
+      }
 
-        get_links_with_uri(out)
+      get_links_with_uri(out)
 
     elsif ('application/rtf, text/plain, text/csv'.include?(info[0]))
       get_links_with_uri(File.open(file_name).read)
@@ -502,8 +503,19 @@ Examples:
     elsif (info[0] == 'application/x-tar')
       process_compressed(file_name, 'application/x-tar')
 
+    elsif (info[1].include?('openoffice.org-calc'))
+      # calc/excel docs need to first be converted to a csv, then
+      # the urls pulled from
+      if (csv = process_office_doc(file_name, info, 'text/csv'))
+        file_name = file_name + '.csv'
+        File.open(file_name, 'wb') {|f|
+          f.write(csv)
+        }
+
+        get_links_with_uri(File.open(file_name).read)
+      end
     elsif (info[1].include?('openoffice.org-impress'))
-      # presentation docs cannot be convert straight to html, but
+      # presentation/powerpoint docs cannot be convert straight to html, but
       # instead need a two step process of first being converted to
       # ms-word and then to html
       if (pdf = process_office_doc(file_name, info, 'application/pdf'))
@@ -626,68 +638,79 @@ Examples:
     @log.debug("URL count before compact #{@links.size}")
     @links = @links.uniq.compact
 
-    if (@links.size > 0)
-      time = Time.new
-
-      # create job_source
-      job_source = {}
-      job_source['name'] = @message_id
-      job_source['protocol'] = 'smtp'
-      job_source['x_count']= @x_count
-
-      # create job
-      job = {}
-      job['uuid'] = Guid.new.to_s
-      job['url_count'] = @links.size
-      job['created_at'] = time
-      job['job_source'] = job_source
-
-      urls = []
-
-      url_status = {}
-      url_status['status'] = 'queued'
-
-      @links.map {|link|
-        url = {}
-        url['url'] = link
-        url['priority'] = 1
-        url['url_status'] = url_status
-
-        urls.push(url)
-      }
-
-      job['urls'] = urls
-
-      job_alerts = []
-
-      # foreach recipient create a job_alert and add
-      @recipients.each { |recipient|
-        job_alert = {}
-        job_alert['protocol'] = 'smtp'
-        job_alert['address'] = recipient.address
-
-        job_alerts.push(job_alert)
-      }
-
-      #job['job_alerts'] = job_alerts
-
-      wrapper = {}
-      wrapper['job'] = job
-
-      @log.info("Publishing #{@links.size} links to AMQP server #{@links}...")
-
-      EM.run do
-        connection = AMQP.connect(:host => @options.amqp_host, :port => @options.amqp_port,:user => @options.amqp_user, :pass => @options.amqp_password, :vhost => @options.amqp_vhost, :logging => @options.amqp_logging)
-        channel = MQ.new(connection)
-        exchange = MQ::Exchange.new(channel, :topic, @options.amqp_exchange, {:key=> @options.amqp_routing_key, :passive => false, :durable => true, :auto_delete => false, :internal => false, :nowait => false})
-  #      queue = MQ::Queue.new(channel, 'events', :durable => true)
-  #      queue.bind(exchange)
-  #      queue.publish(JSON.pretty_generate job, {:routing_key => @options.amqp_routing_key, :persistent => true})
-  #      exchange.publish(JSON.pretty_generate job, {:routing_key => @options.amqp_routing_key, :persistent => true})
-        exchange.publish(JSON.pretty_generate wrapper, {:persistent => true})
-        connection.close{ EM.stop }
-      end
+    response = ''
+    begin
+      tn = Net::Telnet.new('Host' => '127.0.0.1', 'Port' => 8081, 'Telnetmode' => false)
+      response = tn.cmd("add #{@links.size}")
+    rescue Exception => e
+      @log.error('Throttle daemon not likely started!')
+      throw e
     end
+    
+    if (response.match(/^open/))
+        time = Time.new
+
+        # create job_source
+        job_source = {}
+        job_source['name'] = @message_id
+        job_source['protocol'] = 'smtp'
+        job_source['x_count']= @x_count
+
+        # create job
+        job = {}
+        job['uuid'] = Guid.new.to_s
+        job['url_count'] = @links.size
+        job['created_at'] = time
+        job['job_source'] = job_source
+
+        urls = []
+
+        url_status = {}
+        url_status['status'] = 'queued'
+
+        @links.map {|link|
+          url = {}
+          url['url'] = link
+          url['priority'] = 1
+          url['url_status'] = url_status
+
+          urls.push(url)
+        }
+
+        job['urls'] = urls
+
+        job_alerts = []
+
+        # foreach recipient create a job_alert and add
+        @recipients.each { |recipient|
+          job_alert = {}
+          job_alert['protocol'] = 'smtp'
+          job_alert['address'] = recipient.address
+
+          job_alerts.push(job_alert)
+        }
+
+        #job['job_alerts'] = job_alerts
+
+        wrapper = {}
+        wrapper['job'] = job
+
+        @log.info("Publishing #{@links.size} links to AMQP server :: #{@links}...")
+
+        EM.run do
+          connection = AMQP.connect(:host => @options.amqp_host, :port => @options.amqp_port,:user => @options.amqp_user, :pass => @options.amqp_password, :vhost => @options.amqp_vhost, :logging => @options.amqp_logging)
+          channel = MQ.new(connection)
+          exchange = MQ::Exchange.new(channel, :topic, @options.amqp_exchange, {:key=> @options.amqp_routing_key, :passive => false, :durable => true, :auto_delete => false, :internal => false, :nowait => false})
+          #      queue = MQ::Queue.new(channel, 'events', :durable => true)
+          #      queue.bind(exchange)
+          #      queue.publish(JSON.pretty_generate job, {:routing_key => @options.amqp_routing_key, :persistent => true})
+          #      exchange.publish(JSON.pretty_generate job, {:routing_key => @options.amqp_routing_key, :persistent => true})
+          exchange.publish(JSON.pretty_generate wrapper, {:persistent => true})
+          connection.close{ EM.stop }
+        end
+      else
+        @log.info("Throttle closed, not publishing  #{@links.size} links to AMQP server :: #{@links}...")
+      end if (@links.size > 0)
   rescue Exception => e
     @log.error("Problem sending message to AMQP server, #{$!}")
   end
