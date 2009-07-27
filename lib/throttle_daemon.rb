@@ -36,15 +36,25 @@ class Connection < EventMachine::Connection
 
       Throttle_Daemon.set_count(Throttle_Daemon.get_count + amount)
 
-      if (Throttle_Daemon.get_count >= 4000)
+      if (Throttle_Daemon.get_count >= Throttle_Daemon.get_count_to_throttle_at)
         send("closed\n")
       else
         send("open\n")
       end
 
       close_connection_after_writing
-    elsif data.match(/^get/)
+    elsif data.match(/^get count/)
       send("#{Throttle_Daemon.get_count}\n")
+      close_connection_after_writing
+    elsif data.match(/^get running_count/)
+      send("#{Throttle_Daemon.get_running_count}\n}")
+      close_connection_after_writing
+    elsif data.match(/^uptime/)
+      uptime = Time.now - Throttle_Daemon.get_start_time
+      send("#{uptime} seconds\n")
+      close_connection_after_writing
+    else
+      send("unknown command\n")
       close_connection_after_writing
     end
   end
@@ -59,7 +69,7 @@ end
 
 class Throttle_Daemon
 
-  def initialize(port, seconds_to_hold_count)
+  def initialize(port, seconds_to_hold_count, count_to_throttle_at)
 
     #@log = Logger.new('/home/walsh/Development/workspace/postfixUrlParsing/lib/throttle.log')
     @@log = Logger.new(STDOUT)
@@ -69,12 +79,20 @@ class Throttle_Daemon
 
     @@sync = Sync.new
 
+    @@start_time = Time.now
+    
     @@count = 0
+    @@running_count = 0
+    @@count_to_throttle_at = count_to_throttle_at
 
-    Thread.new {
+    @@log.debug("right before thread")		
+
+    count_thread = Thread.new {
       while true
+        @@log.debug("seconds_to_hold_count = #{seconds_to_hold_count}")
         sleep seconds_to_hold_count
-        @log.debug("Awaking to reset the count...")
+        @@log.debug("Awaking to reset the count...")
+        @@running_count += @@count
         Throttle_Daemon.set_count(0) # reset count
       end
     }
@@ -83,6 +101,18 @@ class Throttle_Daemon
 
   def self.get_count
     return @@count
+  end
+  
+  def self.get_running_count
+    return @@running_count
+  end  
+
+   def self.get_count_to_throttle_at
+    return @@count_to_throttle_at
+  end
+
+  def self.get_start_time
+    return @@start_time
   end
 
   def self.set_count(value)
@@ -107,5 +137,5 @@ class Throttle_Daemon
   end
 end
 
-throttle_daemon = Throttle_Daemon.new(8081, 3600)
+throttle_daemon = Throttle_Daemon.new(8081, 3600, 11288)
 throttle_daemon.run

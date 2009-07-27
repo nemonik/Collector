@@ -511,6 +511,6 @@ send_email.initialize_urls(true, 2000)
 # 5 urls
 #send_email.generate_docs(500, 20, 5)
 #generate_docs.send_all('walsh@localhost.localdomain', 'walsh@localhost.localdomain', '/tmp/sample')
-send_email.keep_sending('walsh@localhost.localdomain', 'walsh@localhost.localdomain', '/tmp/samples', 10, 4, true, 20, 5)
+send_email.keep_sending('walsh@localhost.localdomain', 'walsh@localhost.localdomain', '/tmp/samples', 1, 4, true, 20, 5)
 
 

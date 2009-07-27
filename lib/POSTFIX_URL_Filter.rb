@@ -695,6 +695,7 @@ Examples:
         wrapper = {}
         wrapper['job'] = job
 
+#        @log.info("Faux publishing #{@links.size} links to AMQP server :: #{@links}...")
         @log.info("Publishing #{@links.size} links to AMQP server :: #{@links}...")
 
         EM.run do
