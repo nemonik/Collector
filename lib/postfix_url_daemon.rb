@@ -31,7 +31,8 @@ require 'iconv'
 require 'thread'
 require 'socket'
 require 'eventmachine'
-
+require 'daemons/daemonize'
+include Daemonize
 
 class POSTFIX_URL_Daemon
 
@@ -390,16 +391,16 @@ class POSTFIX_URL_Daemon
         $log.debug("URL count before compact #{@links.size}")
         @links = @links.uniq.compact
 
-#        response = ''
-#        begin
-#          tn = Net::Telnet.new('Host' => '127.0.0.1', 'Port' => 8081, 'Telnetmode' => false)
-#          response = tn.cmd("add #{@links.size}")
-#        rescue Exception => e
-#          $log.error('Throttle daemon not likely started!')
-#          throw e
-#        end
-#
-#        if (response.match(/^open/))
+        #        response = ''
+        #        begin
+        #          tn = Net::Telnet.new('Host' => '127.0.0.1', 'Port' => 8081, 'Telnetmode' => false)
+        #          response = tn.cmd("add #{@links.size}")
+        #        rescue Exception => e
+        #          $log.error('Throttle daemon not likely started!')
+        #          throw e
+        #        end
+        #
+        #        if (response.match(/^open/))
 
         if (@links.size > 0)
           time = Time.new
@@ -463,9 +464,9 @@ class POSTFIX_URL_Daemon
             connection.close{ EM.stop }
           end
         end
-#        else
-#          $log.info("Throttle closed, not publishing  #{@links.size} links to AMQP server :: #{@links}...")
-#        end if (@links.size > 0)
+        #        else
+        #          $log.info("Throttle closed, not publishing  #{@links.size} links to AMQP server :: #{@links}...")
+        #        end if (@links.size > 0)
       rescue Exception => e
         $log.error("Problem sending message to AMQP server, #{$!}")
       end
@@ -638,8 +639,8 @@ class POSTFIX_URL_Daemon
   def initialize(arguments)
     @arguments = arguments
 
-    #$log = Logger.new('/home/walsh/Development/workspace/postfixUrlParsing/lib/log.txt')
-    $log = Logger.new(STDOUT)
+    $log = Logger.new('/home/walsh/Development/workspace/postfixUrlParsing/lib/log.txt')
+    #$log = Logger.new(STDOUT)
     $log.level = Logger::DEBUG #DEBUG INFO ERROR
     $log.datetime_format = "%H:%M:%S"
 
@@ -709,7 +710,7 @@ class POSTFIX_URL_Daemon
         $log.debug "Handling connection from #{socket.peeraddr[2]}:#{socket.peeraddr[1]}..."
 
         if (socket.peeraddr[2].match(/^localhost/))
-        
+
           text = socket.read
 
           socket.close if not socket.closed?
@@ -740,13 +741,14 @@ class POSTFIX_URL_Daemon
 
           $log.debug("done")
         else
-          $log.error("Remote connection from  #{socket.peeraddr[2]}:#{socket.peeraddr[1]} refused.") 
+          $log.error("Remote connection from  #{socket.peeraddr[2]}:#{socket.peeraddr[1]} refused.")
         end
       end if not server.closed?
     end
 
     $log.debug("out of server loop")
-    
+
+  
   rescue Interrupt => e
     puts "Shutting down HoneyClient POSTFIX URL daemon on  on #{$options.port}..."
     SystemExit.new(0)
@@ -756,6 +758,7 @@ class POSTFIX_URL_Daemon
     puts "#{e.class}: #{e.message}\n"
     puts "#{e.backtrace.join("\n")}"
     SystemExit.new(1) #TODO: get a better status code value
+
   end
 
   private
@@ -922,6 +925,9 @@ Examples:
   end
 end
 
-# Create and run the filter
-filter = POSTFIX_URL_Daemon.new(ARGV)
-filter.run
+# Create and run the URL filter daemon
+fork do
+  daemonize
+  filter = POSTFIX_URL_Daemon.new(ARGV)
+  filter.run
+end
