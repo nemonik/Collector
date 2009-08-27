@@ -56,4 +56,3 @@ start_ooo = Start_OOo.new
 start_ooo.run
 
 end
-
