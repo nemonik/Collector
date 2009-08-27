@@ -116,7 +116,7 @@ Examples:
         @options.amqp_host = host
       }
                                       
-      opts.on('-P', '--port PORT', String, 'set port to PORT.') { |port|
+      opts.on('-P', '--port PORT', Integer, 'set port to PORT.') { |port|
         @options.amqp_port = port
       }
                                                           
