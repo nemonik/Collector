@@ -1,7 +1,7 @@
 #!/usr/local/bin/ruby19
 
 # == Synopsis
-#   A daemon to parse URLs from emails pulled off a FIFO
+#   A daemon to parse URLs from emails pulled off a socket
 #
 # Author::    Michael Joseph Walsh (mailto:mjwalsh_n_o__s_p_a_m@mitre.org)
 # Copyright:: Copyright (c) 2009 The MITRE Corporation.  All Rights Reserved.
@@ -31,8 +31,10 @@ require 'iconv'
 require 'thread'
 require 'socket'
 require 'eventmachine'
+require 'term/ansicolor'
 require 'daemons/daemonize'
 include Daemonize
+include Term::ANSIColor
 
 class POSTFIX_URL_Daemon
 
@@ -47,7 +49,7 @@ class POSTFIX_URL_Daemon
         @msg_text = nil
         @recipients = []
         @links = []
-        @x_count = "" # used inconjunction with Send_Email.rb script.
+        @x_count = nil # used inconjunction with Send_Email.rb script.
 
         @mutex = Mutex.new
         @mutex.synchronize {@waiting = true}
@@ -57,10 +59,23 @@ class POSTFIX_URL_Daemon
           while @mutex.synchronize {@waiting}
             if @mutex.synchronize {@running}
               process_email
+              send_to_amqp_queue
+              free
               @mutex.synchronize {@running = false}
             end
           end
         end
+      end
+
+      def free
+        @links = []
+        @recipients = []
+        @msg_text = nil
+        @x_count = nil
+      end
+
+      def get_name
+        "#{@name} (#{name})"
       end
 
       def name
@@ -84,11 +99,25 @@ class POSTFIX_URL_Daemon
 
       private
 
+      def log(level, msg)
+
+        case level
+          when :debug
+            $log.debug("worker #{@name} : #{msg}")
+          when :info
+            $log.info("worker #{@name} : #{msg}")
+          when :warn
+            $log.warn("worker #{@name} : #{msg}")
+          when :error
+            $log.error("worker #{@name} : #{msg}")
+        end
+      end
+
       # Record the error for posterity
       def record_error(e)
         if ((!@message_id.nil?) && (!@message_id.empty?))
           begin
-            $log.error("\"#{e.message}\" for message #{@message_id}\n#{e.backtrace}")
+            log(:error, "\"#{e.message}\" for message #{@message_id}\n#{e.backtrace}")
 
             @message_id = @message_id.gsub('<', '').gsub('>','')
             folder_name = File.join($options.tmp_folder_for_attachments, 'bad-msg', @message_id)
@@ -109,7 +138,7 @@ class POSTFIX_URL_Daemon
             exception_file.close unless exception_file.nil?
           end
         else
-          $log.error("#{e.message}\n#{e.backtrace}")
+          log(:error, "#{e.message}\n#{e.backtrace}")
         end
       end
 
@@ -146,7 +175,7 @@ class POSTFIX_URL_Daemon
 
           sendmail_cmd.chomp(" ")
 
-          $log.debug("sending msg #{@message_id} to sendmail...")
+          log(:debug, "sending msg #{@message_id} to sendmail...")
           IO.popen("#{sendmail_cmd}", "w") { |sendmail| sendmail << "#{@msg_text}" }
 
         end
@@ -162,22 +191,20 @@ class POSTFIX_URL_Daemon
 
             if ((header['Content-Type'].downcase.include? 'text/plain') && (!header.has_key?('Content-Disposition')))
 
-              $log.debug('handling plain text part...')
+              log(:debug, 'handling plain text part...')
 
               get_links_with_uri(doc)
 
             elsif ((header['Content-Type'].downcase.include? 'text/html') && (!header.has_key?('Content-Disposition')))
-              $log.debug('handling html part...')
+              log(:debug, 'handling html part...')
 
               get_links(doc)
 
             elsif ((header.has_key?('Content-Disposition')) && (header['Content-Disposition'].downcase.include? 'attachment') && (!$options.ignore_attachments))
 
-              $log.debug('message has an attachment...')
-
               if (header['Content-Transfer-Encoding'].downcase.include? 'base64')
 
-                $log.debug('handling base64 attachment...')
+                log(:debug, 'handling base64 attachment...')
 
                 # create unique directory to hold the file for processing, and allow for easy cleanup
                 folder_name = $options.tmp_folder_for_attachments + "/" + Guid.new.to_s
@@ -195,24 +222,24 @@ class POSTFIX_URL_Daemon
                   }
                 rescue Timeout::Error
 
-                  $log.info('Processing of attachments has timed out.')
+                  log(:info, ' => Processing of attachments has timed out.')
 
                 ensure
                   FileUtils.rm_rf(folder_name) #unless folder_name.nil?
                 end
               else
-                $log.warn("Unhandled content-transfer-encoding #{header['Content-Transfer-Encoding']}")
+                log(:warn, " => Unhandled content-transfer-encoding #{header['Content-Transfer-Encoding']}")
               end
 
             elsif (header['Content-Type'].downcase.include? 'message/rfc822')
 
-              $log.debug('handling forwarded email...')
+              log(:debug, 'handling forwarded email...')
 
               process_email(doc)
 
             else # handle unknown content-type
 
-              $log.warn("Unhandled content-type #{header['Content-Type']}")
+              log(:warn,"Unhandled content-type #{header['Content-Type']}")
 
             end if ((doc.class != NilClass) && (doc.strip != ''))
           }
@@ -224,11 +251,11 @@ class POSTFIX_URL_Daemon
       # Process the file
       def process_file(file_name)
 
-        $log.debug("writing file #{file_name}...")
+        log(:debug, " => writing file #{file_name}...")
 
         info = mime_shared_info(file_name)
 
-        $log.debug("info = #{info}")
+        log(:debug, " => info = #{info}")
 
         if (info[0] == 'application/pdf')
           out = nil
@@ -290,7 +317,7 @@ class POSTFIX_URL_Daemon
           get_links(html) if html
 
         else
-          $log.error("Unhandled file type of \"#{info}\"")
+          log(:error, " => Unhandled file type of \"#{info}\"")
         end
 
       end
@@ -299,7 +326,7 @@ class POSTFIX_URL_Daemon
       def process_office_doc(file_name, info, accept)
         # TODO: Handle Excel documents.
 
-        $log.debug("calling OOo web service to process #{file_name}")
+        log(:debug, " => calling OOo web service to process #{file_name}")
 
         start = Time.now if ($log.level == Logger::DEBUG)
         headers = {
@@ -307,7 +334,7 @@ class POSTFIX_URL_Daemon
           'Accept' => accept
         }
 
-        url = URI.parse('http://localhost:8080/converter/service')
+        url = URI.parse('http://localhost:8080/jodconverter-webapp-2.2.2/service')
         request = Net::HTTP::Post.new(url.path, headers)
         request.body = File.open(file_name,"rb") {|io| io.read}
 
@@ -317,7 +344,7 @@ class POSTFIX_URL_Daemon
 
         if ($log.level == Logger::DEBUG)
           stop = Time.now
-          $log.debug("OOo web service responded in #{stop-start} seconds.")
+          log(:debug, " => OOo web service responded in #{stop-start} seconds.")
         end
 
         return response.body
@@ -329,7 +356,7 @@ class POSTFIX_URL_Daemon
 
         dst = File.dirname(file_name)
 
-        $log.debug("processing #{compression} compressed #{file_name}...")
+        log(:debug, " => processing #{compression} compressed #{file_name}...")
 
         if (compression == 'application/zip')
           Compression.unzip(file_name, dst)
@@ -346,13 +373,13 @@ class POSTFIX_URL_Daemon
           FileUtils.rm(file_name)
 
         else
-          $log.error("#{compression} unhandled form of compression")
+          log(:error, " => #{compression} unhandled form of compression")
         end
 
         # process contents, drilling into sub-folders if they exist
         Find.find(dst) { |contents|
           if File.file? contents
-            $log.debug("from #{File.basename(file_name)}, processing #{contents}")
+            log(:debug, " => from #{File.basename(file_name)}, processing #{contents}")
             process_file(contents)
           end
         }
@@ -388,106 +415,99 @@ class POSTFIX_URL_Daemon
       def send_to_amqp_queue
 
         # strip off dupes
-        $log.debug("URL count before compact #{@links.size}")
+        log(:debug, "URL count before compact #{@links.size}")
         @links = @links.uniq.compact
 
-        #        response = ''
-        #        begin
-        #          tn = Net::Telnet.new('Host' => '127.0.0.1', 'Port' => 8081, 'Telnetmode' => false)
-        #          response = tn.cmd("add #{@links.size}")
-        #        rescue Exception => e
-        #          $log.error('Throttle daemon not likely started!')
-        #          throw e
-        #        end
-        #
-        #        if (response.match(/^open/))
-
         if (@links.size > 0)
-          time = Time.new
 
-          # create job_source
-          job_source = {}
-          job_source['name'] = @message_id
-          job_source['protocol'] = 'smtp'
-          job_source['x_count']= @x_count
+          $count_mutex.synchronize {$count += @links.size}
 
-          # create job
-          job = {}
-          job['uuid'] = Guid.new.to_s
-          job['url_count'] = @links.size
-          job['created_at'] = time
-          job['job_source'] = job_source
+          if ($count_mutex.synchronize {$count <= $options.max_count})
+            time = Time.new
 
-          urls = []
+            # create job_source
+            job_source = {}
+            job_source['name'] = @message_id
+            job_source['protocol'] = 'smtp'
+            job_source['x_count']= @x_count
 
-          url_status = {}
-          url_status['status'] = 'queued'
+            # create job
+            job = {}
+            job['uuid'] = Guid.new.to_s
+            job['url_count'] = @links.size
+            job['created_at'] = time
+            job['job_source'] = job_source
 
-          @links.map {|link|
-            url = {}
-            url['url'] = link
-            url['priority'] = 1
-            url['url_status'] = url_status
+            urls = []
 
-            urls.push(url)
-          }
+            url_status = {}
+            url_status['status'] = 'queued'
 
-          job['urls'] = urls
+            @links.map {|link|
+              url = {}
+              url['url'] = link
+              url['priority'] = 1
+              url['url_status'] = url_status
 
-          job_alerts = []
+              urls.push(url)
+            }
 
-          # foreach recipient create a job_alert and add
-          @recipients.each { |recipient|
-            job_alert = {}
-            job_alert['protocol'] = 'smtp'
-            job_alert['address'] = recipient.address
+            job['urls'] = urls
 
-            job_alerts.push(job_alert)
-          }
+            job_alerts = []
 
-          #job['job_alerts'] = job_alerts
+            # foreach recipient create a job_alert and add
+            @recipients.each { |recipient|
+              job_alert = {}
+              job_alert['protocol'] = 'smtp'
+              job_alert['address'] = recipient.address
 
-          wrapper = {}
-          wrapper['job'] = job
+              job_alerts.push(job_alert)
+            }
 
-          $log.info("Publishing #{@links.size} links to AMQP server :: #{@links}...")
+            #job['job_alerts'] = job_alerts
 
-          EM.run do
-            connection = AMQP.connect(:host => $options.amqp_host, :port => $options.amqp_port,:user => $options.amqp_user, :pass => $options.amqp_password, :vhost => $options.amqp_vhost, :logging => $options.amqp_logging)
-            channel = MQ.new(connection)
-            exchange = MQ::Exchange.new(channel, :topic, $options.amqp_exchange, {:key=> $options.amqp_routing_key, :passive => false, :durable => true, :auto_delete => false, :internal => false, :nowait => false})
-            #      queue = MQ::Queue.new(channel, 'events', :durable => true)
-            #      queue.bind(exchange)
-            #      queue.publish(JSON.pretty_generate job, {:routing_key => $options.amqp_routing_key, :persistent => true})
-            #      exchange.publish(JSON.pretty_generate job, {:routing_key => $options.amqp_routing_key, :persistent => true})
-            exchange.publish(JSON.pretty_generate wrapper, {:persistent => true})
-            connection.close{ EM.stop }
+            wrapper = {}
+            wrapper['job'] = job
+
+            log(:info, "Publishing #{@links.size} links to AMQP server :: #{@links}...")
+
+            begin
+              EM.run do
+                connection = AMQP.connect(:host => $options.amqp_host, :port => $options.amqp_port,:user => $options.amqp_user, :pass => $options.amqp_password, :vhost => $options.amqp_vhost, :logging => $options.amqp_logging)
+                channel = MQ.new(connection)
+                exchange = MQ::Exchange.new(channel, :topic, $options.amqp_exchange, {:key=> $options.amqp_routing_key, :passive => false, :durable => true, :auto_delete => false, :internal => false, :nowait => false})
+                #      queue = MQ::Queue.new(channel, 'events', :durable => true)
+                #      queue.bind(exchange)
+                #      queue.publish(JSON.pretty_generate job, {:routing_key => $options.amqp_routing_key, :persistent => true})
+                #      exchange.publish(JSON.pretty_generate job, {:routing_key => $options.amqp_routing_key, :persistent => true})
+                exchange.publish(JSON.pretty_generate wrapper, {:persistent => true})
+                connection.close{ EM.stop }
+              end
+            rescue Exception => e
+              log(:error, "Problem sending message to AMQP server, #{$!}")
+            end
+          else
+            log(:info, "Not publishing  #{@links.size} links to AMQP server :: #{@links}...")
           end
         end
-        #        else
-        #          $log.info("Throttle closed, not publishing  #{@links.size} links to AMQP server :: #{@links}...")
-        #        end if (@links.size > 0)
-      rescue Exception => e
-        $log.error("Problem sending message to AMQP server, #{$!}")
       end
 
       # Select the method to parse out links
       def get_links(text)
-        if ($options.use.match(/^uri/i))
+        if ($options.use == :uri)
           get_links_with_uri(text)
-        elsif ($options.use.match(/^hpricot/i))
+        elsif ($options.use == :hpricot)
           get_links_with_hpricot(text)
-        elsif ($options.use.match(/^nokogiri/i))
+        elsif ($options.use == :nokogiri)
           get_links_with_nokogiri(text)
         else
-          $log.error("Unknown parser #{$options.use} requested!");
+          log(:error, " => Unknown parser #{$options.use} requested!");
         end
       end
 
       # Retrieves all links in the text described by $options.uri_schema
       def get_links_with_uri(text)
-
-        $log.debug("using URI extract to parse...")
 
         # cleanup encoding...
         ic = Iconv.new("#{text.encoding.name}//IGNORE", "#{text.encoding.name}")
@@ -501,20 +521,20 @@ class POSTFIX_URL_Daemon
             tmp_links.push(url)
           }
 
-          $log.debug("adding #{tmp_links} containing #{tmp_links.size} URLs to count")
+          log(:debug, " => URI adds #{tmp_links} containing #{tmp_links.size} URLs to count")
 
           @links = @links + tmp_links
+        else
+          log(:debug, ' => text is empty')
         end
       rescue Exception => e
-        $log.error("had a problem pulling URL from text, #{e.message}, x-count #{@x_count}")
-        $log.error("-------------------------------------------------------------------------------\n#{text}\n-------------------------------------------------------------------------------")
+        log(:error, " => had a problem pulling URL from text, #{e.message}, x-count #{@x_count}")
+        log(:error, " => -------------------------------------------------------------------------------\n => #{text}\n => -------------------------------------------------------------------------------")
         raise e
       end
 
       # Get the links from the text using the Hpricot XML/HTML parser
       def get_links_with_hpricot(text)
-
-        $log.debug("using hpricot to parse...")
 
         if ((!text.nil?) && (!text.strip.empty?))
           # the version of hpricot I developed against
@@ -528,9 +548,9 @@ class POSTFIX_URL_Daemon
           html = Hpricot(text, :fixup_tags => true)
 
           # pull URLs from anchor tags
-          html.search('//a').map { |a|
-            if (a['href'] != nil)
-              url = URI.extract(a['href'], $options.uri_schemes)[0]
+          html.search('//href').map { |href|
+            if (href['a'] != nil)
+              url = URI.extract(href['a'], $options.uri_schemes)[0]
               tmp_links.push(url.gsub(/\/$/,'')) if url
             end
           }
@@ -543,7 +563,7 @@ class POSTFIX_URL_Daemon
             end
           }
 
-          $log.debug("adding #{tmp_links} containing #{tmp_links.size} URLs to count")
+          log(:debug, " => hpricot adds #{tmp_links} containing #{tmp_links.size} URLs to count")
 
           @links = @links + tmp_links
         end
@@ -552,16 +572,14 @@ class POSTFIX_URL_Daemon
       # Get the links from the text using the Nokogiri XML/HTML parser
       def get_links_with_nokogiri(text)
 
-        $log.debug("using nokogiri to parse...")
-
         if ((!text.nil?) && (!text.strip.nil?))
           html = Nokogiri::HTML(text)
           tmp_links = []
 
           # pull URLs from anchor tags
-          html.xpath('//a').map { |a|
-            if (a['href'] != nil)
-              url = URI.extract(a['href'], $options.uri_schemes)[0]
+          html.xpath('//href').map { |href|
+            if (href['a'] != nil)
+              url = URI.extract(href['a'], $options.uri_schemes)[0]
               tmp_links.push(url.gsub(/\/$/,'')) if url
             end
           }
@@ -570,11 +588,12 @@ class POSTFIX_URL_Daemon
           html.xpath('//img').map { |img|
             if (img['src'] != nil)
               url = URI.extract(img['src'], $options.uri_schemes)[0]
+              log(:debug, "  src url is #{url}")
               tmp_links.push(url.gsub(/\/$/,''))  if url
             end
           }
 
-          $log.debug("adding #{tmp_links} containing #{tmp_links.size} URLs to count")
+          log(:debug, " => nokogiri adds #{tmp_links} containing #{tmp_links.size} URLs to count")
 
           @links = @links + tmp_links
         end
@@ -596,6 +615,28 @@ class POSTFIX_URL_Daemon
 
     def busy?
       @mutex.synchronize {@workers.any? {|w| w.busy?}}
+    end
+
+    def status_of_workers
+      values = []
+      @mutex.synchronize {
+        @workers.each {|w|
+
+          value = ''
+          value += "#{w.get_name} is "
+          if w.busy?
+            value += 'busy'
+            value = value.red
+          else
+            value += 'idle'
+            value = value.green
+          end
+          values.push(value)
+        }
+
+      }
+
+      values
     end
 
     def shutdown
@@ -639,8 +680,11 @@ class POSTFIX_URL_Daemon
   def initialize(arguments)
     @arguments = arguments
 
-    $log = Logger.new('/home/walsh/Development/workspace/postfixUrlParsing/lib/log.txt')
-    #$log = Logger.new(STDOUT)
+    $count = 0
+    $count_mutex = Mutex.new
+
+    #$log = Logger.new('/home/walsh/Development/workspace/postfixUrlParsing/lib/log.txt')
+    $log = Logger.new(STDOUT)
     $log.level = Logger::DEBUG #DEBUG INFO ERROR
     $log.datetime_format = "%H:%M:%S"
 
@@ -653,7 +697,7 @@ class POSTFIX_URL_Daemon
     $options.amqp_logging = false
     $options.use = :nokogiri
     $options.amqp_host = 'localhost'
-    $options.amqp_port = '5672'
+    $options.amqp_port = 5672
     $options.amqp_vhost = '/honeyclient.org'
     $options.amqp_routing_key = '1.job.create.job.urls.job_alerts'
     $options.amqp_user = 'guest'
@@ -663,9 +707,9 @@ class POSTFIX_URL_Daemon
     $options.uri_schemes = ['http', 'https', 'ftp', 'ftps']
     $options.ignore_attachments = false
     $options.timeout = 40
-  end
-
-  def run
+    $options.count_period = 3600
+    $options.max_count = 4000
+    $options.daemonize = true
 
     # Parse options, check arguments, then process the email
 
@@ -685,12 +729,21 @@ class POSTFIX_URL_Daemon
         end
 
         process_arguments
+
       else
         $log.error("invalid arguments")
+        SystemExit.new(-1)
       end
     else
       $log.error("invalid options")
+      SystemExit.new(-1)
     end
+  end
+
+  def run
+    throttle_amqp_sends
+
+    mutex = Mutex.new
 
     $pool = ThreadPool.new($options.workers)
 
@@ -698,30 +751,31 @@ class POSTFIX_URL_Daemon
 
     server = TCPServer.open($options.port)
 
-    @shutdown = false
+    shutdown = false
+    connections = 1
 
-    until (@shutdown != false)
+    Thread.abort_on_exception=true
+
+    until (shutdown != false)
       $log.debug("listening...")
 
-      # might want to thread pool socket connections...
-
+      # might want to consider changing this over to SMTP Server interface
+      
       Thread.start(server.accept) do |socket|
+
+        mutex.synchronize { connections += 1 }
 
         $log.debug "Handling connection from #{socket.peeraddr[2]}:#{socket.peeraddr[1]}..."
 
         if (socket.peeraddr[2].match(/^localhost/))
 
-          text = socket.read
-
-          socket.close if not socket.closed?
-
-          $log.debug("#{text}")
-
-          $log.debug("hello #{text.match(/^From/)}")
+          text = socket.read if not socket.closed?
 
           if (text.match(/^From/))
 
             $log.debug("Processing email, getting worker...")
+
+            socket.close if not socket.closed?
 
             worker = $pool.get_worker
 
@@ -732,25 +786,90 @@ class POSTFIX_URL_Daemon
           elsif (text.match(/^shutdown/i))
 
             $log.debug("Recieved shutdown command...")
-            @shutdown = true
+
+            socket.close if not socket.closed?
+
+            shutdown = true
             server.shutdown(2)
 
+          elsif (text.match(/^get count/i))
+
+            $log.debug("Writing count to client...")
+
+            begin
+              $count_mutex.synchronize {
+                value ="#{$count}\n"
+
+                if $count >= ($options.max_count - ($options.max_count/3)) 
+                  value = value.red
+                elsif $count >= ($options.max_count - ($options.max_count * 2/3)) 
+                  value = value.yellow
+                elsif $count < ($options.max_count - ($options.max_count * 2/3)) 
+                  value = value.green
+                end    
+                
+                socket.write(value)
+
+              }
+              socket.close
+            end if not socket.closed?
+
+          elsif (text.match(/^set count/i))
+
+            $log.debug("Setting count to value provide from client...")
+
+            begin
+              $count_mutex.synchronize {
+#                value = text.match(/[0-9].*/)[0]
+                if (value = text.match(/[0-9].*/)[0]) != 0
+                  $count = value.to_i
+                  socket.write("count set to #{$count}\n".green)
+                else
+                  socket.write("count remains #{$count}\n".red)
+                end
+              }
+              socket.close
+            end if not socket.closed?
+
+
+          elsif (text.match(/^get pool/i))
+
+            $log.debug("Writing worker pool status to client...")
+
+            begin
+              $pool.status_of_workers.each {|status|
+                socket.write("#{status}\n")
+              }
+              socket.close
+            end if not socket.closed?
+          elsif (text.match(/^get connections/i))
+            
+            $log.debug("Writing connection count to client...")
+            
+            begin
+              socket.write("#{mutex.synchronize {connections}}\n")
+              socket.close
+            end if not socket.closed?
           else
             $log.error("Unexpected data!")
+            $log.error("=========\n#{text}\n=========\n")
+            socket.close if not socket.closed?
           end
 
-          $log.debug("done")
-        else
-          $log.error("Remote connection from  #{socket.peeraddr[2]}:#{socket.peeraddr[1]} refused.")
+          $log.debug("Connection handler done...")
+          mutex.synchronize { connections -= 1 }
         end
-      end if not server.closed?
+      end 
     end
 
-    $log.debug("out of server loop")
+    $log.debug("Shutting down HoneyClient POSTFIX URL daemon on #{$options.port}...")
 
-  
+  rescue Errno::EINVAL => e
+    # swallow, this is thrown when a thread shutsdown the server and another
+    # thread is listening for a new connection.
+    
   rescue Interrupt => e
-    puts "Shutting down HoneyClient POSTFIX URL daemon on  on #{$options.port}..."
+    puts "Shutting down HoneyClient POSTFIX URL daemon on #{$options.port}..."
     SystemExit.new(0)
 
   rescue Exception => e
@@ -758,10 +877,22 @@ class POSTFIX_URL_Daemon
     puts "#{e.class}: #{e.message}\n"
     puts "#{e.backtrace.join("\n")}"
     SystemExit.new(1) #TODO: get a better status code value
-
   end
 
   private
+  
+  def throttle_amqp_sends()
+    # Kick off a thread to reset count. the count is used to limit the number 
+    # of AMQP messages sent in an $options.seconds_to_hold_count, typically
+    # 3600 seconds.
+    Thread.new {
+      loop do
+        sleep $options.count_period
+        $log.debug("Awaking to reset the count to 0...")
+        $count_mutex.synchronize {$count = 0}
+      end
+    }
+  end
 
   # Have the options been parsed
   def parsed_options?
@@ -773,7 +904,7 @@ class POSTFIX_URL_Daemon
 
       explanation = <<-EOE
 
-A POSTFIX script that filters email for URLs and sends the URLs off to
+A POSTFIX daemon that filters email for URLs and sends the URLs off to
 RabbitMQ queue to be later processed.
 
 
@@ -783,15 +914,8 @@ Examples:
         --amqp_port 5672 --vhost /collector.testing --user guest \\\\
         --password guest --exchange events \\\\
         --routing_key 1.job.create.job.urls.job_alerts \\\\
-        --no-amqp_logging --timeout 100 --use nokogiri
-
-      POSTFIX_URL_Filter.rb --port 8081 --workers 10 --sendmail \\\\
-        --amqp_host drone.honeyclient.org \\\\
-        --amqp_port 5672 --vhost /collector.testing --user guest \\\\
-        --password guest --exchange events \\\\
-        --routing_key 1.job.create.job.urls.job_alerts \\\\
         --no-amqp_logging --timeout 100 --use nokogiri \\\\
-        --file ../test/Sample_doc.msg
+        --daemonize --no-sendmail
 
       POSTFIX_URL_Filter.rb -h
       EOE
@@ -829,7 +953,7 @@ Examples:
         $options.amqp_host = amqp_host
       }
 
-      opts.on('--amqp_port AMQP_PORT', String, 'set amqp_port to AMQP_PORT.') { |amqp_port|
+      opts.on('--amqp_port AMQP_PORT', Integer, 'set amqp_port to AMQP_PORT.') { |amqp_port|
         $options.amqp_port = amqp_port
       }
 
@@ -856,11 +980,11 @@ Examples:
       opts.separator('')
       opts.separator('Actions:');
 
-      opts.on('-S', '--[no-]sendmail', 'Send message onto SendMail.') { |boolean|
+      opts.on('--[no-]sendmail', 'Send message onto SendMail.') { |boolean|
         $options.sendmail = boolean
       }
 
-      opts.on('-l', '--[no-]amqp_logging', 'enable AMQP server interaction logging.') { |boolean|
+      opts.on('--[no-]amqp_logging', 'enable AMQP server interaction logging.') { |boolean|
         $options.amqp_logging = boolean
       }
 
@@ -868,12 +992,24 @@ Examples:
         $options.use = parser
       }
 
-      opts.on('-i', '--ignore_attachments', 'don\'t parse attachments.') { |boolean|
+      opts.on('--[no-]ignore_attachments', 'don\'t parse attachments.') { |boolean|
         $options.ignore_attachments = boolean
       }
 
       opts.on('-t', '--timeout SECONDS', Integer, "set a SECONDS timeout for how long the filter should run parsing for URLs. Default is #{$options.timeout}.") { |timeout|
         $options.timeout = timeout
+      }
+
+      opts.on('-c', '--count_period SECONDS', Integer, "set period of seconds to hold the count of URLs sent to the AMQP server to SECONDS.  Default is #{$options.count_period}.") { |count_period|
+        $options.count_period = count_period
+      }
+
+      opts.on('-m', '--max_count MAX_COUNT', Integer, "set count of  URLS sent to the AMQP server to MAX_COUNT.  Default is #{$options.max_count}.") { |max_count|
+        $opts.max_count = max_count
+      }
+
+      opts.on('--[no-]daemonize', 'daemonize the service. Default is TRUE.') { |boolean|
+        $options.daemonize = boolean
       }
     }
 
@@ -904,7 +1040,6 @@ Examples:
 
   end
 
-
   # True if required arguments were provided
   def arguments_valid?
 
@@ -926,8 +1061,14 @@ Examples:
 end
 
 # Create and run the URL filter daemon
-fork do
-  daemonize
-  filter = POSTFIX_URL_Daemon.new(ARGV)
+
+filter = POSTFIX_URL_Daemon.new(ARGV)
+
+if $options.daemonize
+  fork do
+    daemonize
+    filter.run
+  end
+else
   filter.run
 end

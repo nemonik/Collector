@@ -3,8 +3,6 @@
 # == Synopsis
 #   A script to randomly generate attachments for the purposes of testing
 #
-# == Usage:  Start_OOo.rb {start/stop}
-#
 # Author::    Michael Joseph Walsh (mailto:mjwalsh_n_o__s_p_a_m@mitre.org)
 # Copyright:: Copyright (c) 2009 The MITRE Corporation.  All Rights Reserved.
 # License::
@@ -43,7 +41,7 @@ class Send_Email
     @urls = []
     @doc_types = ['application/msword',
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      'text/plain', 
+      'text/plain',
       'text/rtf',
       'application/vnd.oasis.opendocument.text',
       'application/pdf']
@@ -63,13 +61,13 @@ class Send_Email
 
     @log.debug("#{File.exist?(@urls_filename)}")
     @log.debug("#{read_from_file}")
-    
+
     if (File.exist?(@urls_filename) && (read_from_file))
       read_urls_from_file
-    
+
     else
       FileUtils.rm @urls_filename if File.exists?(@urls_filename)
-          
+
       start = Time.now if (@log.level == Logger::DEBUG)
 
       load_search_terms
@@ -328,7 +326,7 @@ class Send_Email
       'Accept' => accept
     }
 
-    url = URI.parse('http://localhost:8080/converter/service')
+    url = URI.parse('http://localhost:8080/jodconverter-webapp-2.2.2/service')
     request = Net::HTTP::Post.new(url.path, headers)
     request.body = doc
 
@@ -454,7 +452,7 @@ class Send_Email
 
   def get_urls
     @log.debug("calling google search rest api")
-    
+
     query = ''
     # randomly generate a query string using 2 to 4 words
     (1..(rand(1)+2)).each { |i|
@@ -510,7 +508,5 @@ send_email.initialize_urls(true, 2000)
 # generate 500 docs from the URLs containing up 20 paragraphs each containg up
 # 5 urls
 #send_email.generate_docs(500, 20, 5)
-#generate_docs.send_all('walsh@localhost.localdomain', 'walsh@localhost.localdomain', '/tmp/sample')
-send_email.keep_sending('walsh@localhost.localdomain', 'walsh@localhost.localdomain', '/tmp/samples', 1, 4, true, 20, 5)
-
-
+#send_email.send_all('walsh@localhost.localdomain', 'walsh@localhost.localdomain', '/tmp/sample')
+send_email.keep_sending('walsh@localhost.localdomain', 'walsh@localhost.localdomain', '/tmp/samples', 10, 4, true, 20, 5)
