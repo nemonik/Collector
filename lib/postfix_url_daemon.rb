@@ -38,7 +38,7 @@ require 'jodconvert_3_x'
 include Daemonize
 include Term::ANSIColor
 
-class POSTFIX_URL_Daemon
+class PostfixUrlDaemon
 
   VERSION = '0.0.1'
 
@@ -893,7 +893,7 @@ RabbitMQ queue to be later processed.
 
 
 Examples:
-      POSTFIX_URL_daemon.rb --port 8081 --workers 10 --sendmail \\\\
+      ./postfix_url_daemon.rb --port 8081 --workers 10 --sendmail \\\\
         --amqp_host drone.honeyclient.org \\\\
         --amqp_port 5672 --amqp_vhost /collector.testing --amqp_user guest \\\\
         --amqp_password guest --exchange events \\\\
@@ -901,7 +901,9 @@ Examples:
         --no-amqp_logging --timeout 100 --use nokogiri \\\\
         --daemonize --no-sendmail
 
-      POSTFIX_URL_Filter.rb -h
+      ./postfix_url_daemon.rb -h
+
+      ./postfix_url_daemon.rb --no-daemonize
       EOE
 
       opts.separator(explanation)
@@ -1046,7 +1048,7 @@ end
 
 # Create and run the URL filter daemon
 
-filter = POSTFIX_URL_Daemon.new(ARGV)
+filter = PostfixUrlDaemon.new(ARGV)
 
 if $options.daemonize
   fork do

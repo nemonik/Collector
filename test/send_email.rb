@@ -10,12 +10,9 @@
 $LOAD_PATH << File.expand_path('../lib')  # hack for now, to pick up my Compression module
 
 require 'logger'
-require 'lorem'
-require 'json'
 require 'uri'
 require 'net/http'
 require 'stringio'
-require 'zlib'
 require 'open-uri'
 require 'guid'
 require 'mime/types'
@@ -24,69 +21,42 @@ require 'net/smtp'
 require 'fileutils'
 require 'compression'
 require 'jodconvert_3_x'
+require 'utility'
 
 
-class Send_Email
+class SendEmail
 
-  include JODCovert_3_x, Compression
+  include JODCovert_3_x, Compression, Utility
 
-  def initialize(urls_filename = '/tmp/urls.txt', samples_folder = '/tmp/samples')
+  attr_accessor :urls_filename
+  attr_accessor :samples_folder
+  attr_accessor :ignore
+  attr_accessor :search_terms
+  attr_accessor :search_term_iterator
+  attr_accessor :urls
+  attr_accessor :url_iterator
+  attr_accessor :doc_types
 
-    #@log = Logger.new('/home/walsh/Development/workspace/postfixUrlParsing/lib/generate_docs.log')
+  def initialize(urls_filename = File.expand_path('~/urls.txt'), samples_folder =  File.expand_path('~/samples'))
+
     @log = Logger.new(STDOUT)
     @log.level = Logger::DEBUG #DEBUG INFO ERROR
     @log.datetime_format = "%H:%M:%S"
 
     @urls_filename = urls_filename
     @samples_folder = samples_folder
+
     @ignore = ['en.wikipedia.org', 'www.answers.com']
-    @search_terms = []
-    @url_iterator = 0
-    @search_term_iterator = 0
-    @urls = []
-
-    @doc_types = {:doc=>'application/msword', :docx=>'application/vnd.openxmlformats-officedocument.wordprocessingml.document', :txt=>'text/plain', :rtf=>'text/rtf', :odt=>'application/vnd.oasis.opendocument.text', :pdf=>'application/pdf'}
-    # cannot be converted to
-    #      'application/vnd.ms-powerpoint',
-    #      'application/vnd.openxmlformats-officedocument.presentationml.presentation']
-
     @msg_count = 0
+
+    @search_terms = []
+    @search_term_iterator = 0
+
+    @urls = []
+    @url_iterator = 0
 
     @log.debug("initialized...")
 
-  end
-
-  def initialize_urls(read_from_file, word_count = 1000)
-
-    @log.debug("#{File.exist?(@urls_filename)}")
-    @log.debug("#{read_from_file}")
-
-    if (File.exist?(@urls_filename) && (read_from_file))
-      read_urls_from_file
-
-    else
-      FileUtils.rm @urls_filename if File.exists?(@urls_filename)
-
-      start = Time.now if (@log.level == Logger::DEBUG)
-
-      load_search_terms
-
-      if (@log.level == Logger::DEBUG)
-        stop = Time.now
-        @log.debug("read in #{@search_terms.size} search terms in #{stop-start} seconds.")
-      end
-
-      (1..word_count).each { |i|
-        get_urls
-      }
-
-      @urls = @urls.uniq.compact
-      @urls = @urls.sort_by { rand }
-
-      write_urls_to_file
-    end
-
-    @log.debug("Using #{@urls.size} URLs")
   end
 
   def generate_docs(document_count = 100, max_paragraph_count = 20, max_url_count = 5)
@@ -99,7 +69,7 @@ class Send_Email
 
     (0..document_count).each {|i|
       @log.debug("generating #{i}/#{document_count}")
-      generate_random_type_document(max_paragraph_count, max_url_count)
+      generate_random_type_document(@samples_folder, max_paragraph_count, max_url_count)
     }
 
   end
@@ -285,219 +255,17 @@ class Send_Email
       l += 1
     end
   end
-  
-  def generate_random_type_document(max_paragraph_count = 20, max_url_count = 5)
-
-    generate_document(@doc_types.keys[rand(@doc_types.keys.size) - 1], max_paragraph_count, max_url_count)
-
-  end
-
-  def generate_document(doc_type, max_paragraph_count = 20, max_url_count = 5)
-
-    if (@doc_types[doc_type] == nil)
-      raise UnsupportedDocumentType.new("'#{doc_type}' is unsupported document type.")
-    end
-
-    doc = case doc_type
-       when :txt
-        doc = generate_text('text/plain', max_paragraph_count, max_url_count)
-      else
-        text = generate_text('text/html', max_paragraph_count, max_url_count)
-        #@log.debug("src html document = #{text}")
-        process_document_text(text, 'text/html', 'html', @doc_types[doc_type], doc_type)
-    end
-
-    #@log.debug("#{doc}")
-
-    if (!Dir.exists?(@samples_folder))
-      Dir.mkdir(@samples_folder)
-    end
-
-    filename = File.join(@samples_folder, "#{Guid.new.to_s}.#{doc_type}")
-
-    File.open(filename, 'wb') {|f| f.write(doc) }
-
-    @log.debug("wrote #{filename}")
-  rescue Exception => e
-    @log.error("Something bad happended...")
-    @log.error("#{e.class}: #{e.message}")
-    @log.error("#{e.backtrace.join("\n")}")
-  end
-
-  def generate_text(html = 'text/plain', max_paragraph_count = 20, max_url_count = 5)
-
-    text = nil
-
-    if (html == 'text/html')
-      text = "<html>\n<body>\n"
-    else
-      text = ''
-    end
-
-    paragraph_count = rand(max_paragraph_count) + 1
-
-    @log.debug("creating a document of #{paragraph_count} paragraphs...")
-
-    (1..paragraph_count).each { |j|
-
-      para_txt = Lorem::Base.new('paragraphs', 1).output
-
-      paragraph = para_txt.split(' ')
-
-      url_count = rand(max_url_count) - 1
-
-      (1..url_count).each {|i|
-        increment_url_iterator()
-
-        @log.debug(" >> adding '<#{@urls[@url_iterator]}>', #{i}/#{url_count} to #{j}/#{paragraph_count} paragraph")
-
-        if (html == 'text/html')
-          paragraph.insert(rand(paragraph.size-1), " <a href=\"#{@urls[@url_iterator]}\">#{@urls[@url_iterator]}</a> ")
-        else
-          paragraph.insert(rand(paragraph.size-1), " #{@urls[@url_iterator]} ")
-        end
-      }
-
-      @log.debug(" >> adding #{j}/#{paragraph_count} paragraph to doc")
-
-      if (html == 'text/html')
-        text << "<p>"
-      end
-
-      text << paragraph.join(' ')
-
-      if (html == 'text/html')
-        text << "</p>\n\n"
-      else
-        text << "\n\n"
-      end
-    }
-
-    if (html == 'text/html')
-      text << "</body>\n</html>"
-    end
-
-    return text
-  end
-
-  def read_urls_from_file
-
-    @log.debug("Reading in URLs from #{@urls_filename}")
-    f = File.new(@urls_filename)
-
-    f.readlines.map {|url|
-      @urls.push(url.chomp)
-    }
-
-    f.close
-  end
-
-  def write_urls_to_file
-    f = File.open(@urls_filename, 'w')
-
-    @urls.each { |url|
-      f.puts(url)
-    }
-
-    f.close
-
-    @log.debug("wrote #{@urls_filename}")
-  end
-
-  def load_search_terms
-    f = File.new('/usr/share/dict/words')
-
-    f.readlines.map {|word|
-      @search_terms.push(word.chomp)
-    }
-
-    # randomize search_terms
-    @search_terms = @search_terms.sort_by { rand }
-
-    f.close
-  end
-
-  def increment_search_term_iterator()
-    @search_term_iterator += 1
-    if (@search_term_iterator > @search_terms.size)
-      @search_term_iterator = 0
-    end
-
-    return @search_term_iterator
-  end
-
-  def increment_url_iterator()
-    @url_iterator += 1
-    if (@url_iterator > @urls.size)
-      @url_iterator = 0
-    end
-
-    return @url_iterator
-  end
-
-  def get_urls
-    @log.debug("calling google search rest api")
-
-    query = ''
-    # randomly generate a query string using 2 to 4 words
-    (1..(rand(1)+2)).each { |i|
-      query << @search_terms[increment_search_term_iterator()] << '+'
-    }
-
-    start = Time.now if (@log.level == Logger::DEBUG)
-    headers = {
-      'User-Agent' =>	'Mozilla/5.0 (Macintosh; U; Intel Mac OS X 10.5; en-US; rv:1.9.1) Gecko/20090624 Firefox/3.5',
-      'Accept' =>	'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-      'Accept-Language' =>	'en-us,en;q=0.5',
-      'Accept-Encoding' =>	'gzip,deflate',
-      'Accept-Charset' =>	'ISO-8859-1,utf-8;q=0.7,*;q=0.7',
-      'Keep-Alive' => '300',
-      'Connection' => 'keep-alive'
-    }
-
-    url_string = "http://ajax.googleapis.com/ajax/services/search/web?v=1.0&q=" << query.chop!
-    @log.debug("url = #{url_string}")
-    url = URI.parse(url_string)
-    request = Net::HTTP::Get.new(url_string, headers)
-
-    response = Net::HTTP.start(url.host, url.port) {|http|
-      response = http.request(request)
-    }
-
-    if (@log.level == Logger::DEBUG)
-      stop = Time.now
-      @log.debug("google search rest api responded in #{stop-start} seconds.")
-    end
-
-    response = Zlib::GzipReader.new(StringIO.new(response.body))
-
-    response = JSON.parse(response.read)
-
-    response['responseData']['results'].each { |item|
-      begin
-        url = item['url']
-        host = URI.parse(url).host
-        @urls.push(url) if (!@ignore.include?(host))
-      rescue Exception => e
-        #  swallow
-      end
-    }
-  rescue Exception => e
-    #  swallow
-  end
 end
 
-send_email = Send_Email.new('/home/walsh/urls.txt', '/home/walsh/samples')
+send_email = SendEmail.new
+
+puts send_email.urls
+
 # read URLs from file if the file exists; otherwise, generate URLs using
 # 2000 seed words
 send_email.initialize_urls(true, 2000)
 # generate 500 docs from the URLs containing up 20 paragraphs each containg up
 # 5 urls
-
-#doc = send_email.generate_text('text/html')
-#File.open("/tmp/testme.html", 'wb') {|f| f.write(doc) }
-#exit
-
 send_email.generate_docs(500, 20, 5)
 #send_email.send_all('walsh@localhost.localdomain', 'walsh@localhost.localdomain', '/tmp/sample')
 send_email.keep_sending('walsh@localhost.localdomain', 'walsh@localhost.localdomain', '/tmp/samples', 10, 4, true, 20, 5)

@@ -19,6 +19,8 @@ module JODCovert_3_x
   class UnsupportedDocumentType < RuntimeError; end;
   class ServiceNotAvailable < RuntimeError; end;
 
+  $doc_types = {:doc=>'application/msword', :docx=>'application/vnd.openxmlformats-officedocument.wordprocessingml.document', :txt=>'text/plain', :rtf=>'text/rtf', :odt=>'application/vnd.oasis.opendocument.text', :pdf=>'application/pdf'}
+
   $webapp_path = '/jodconverter-sample-webapp-3.0-SNAPSHOT'
 
   def jodconvert_3_x_running?
@@ -34,7 +36,9 @@ module JODCovert_3_x
   end
 
   def process_office_file(file_name, file_mime_type, out_format, out_suffix)
-    
+
+    @log.debug(" => Calling JODConvert 3.x OOo web service to convert #{file_name} to #{out_format}...")
+
     response_body = handle_jodconvert_3_x_req(UploadIO.new(file_name, file_mime_type), out_format, out_suffix)
 
     if (response_body =~ /javax.servlet.ServletException/)
@@ -52,13 +56,11 @@ module JODCovert_3_x
     file.flush
     file.close
 
+    @log.debug(" => Created temp file #{file_name} to hold #{in_mime_type} data stream for JODConvert 3.x processing...");
+
     response_body = process_office_file(file_name, in_mime_type, out_format, out_suffix)
 
     File.delete(file_name)
-
-    if (response_body =~ /javax.servlet.ServletException/)
-      raise ConversionError.new("Jodconvert 3.x OOo web service failed to convert text encoded in #{in_mime_type} to a document of type #{output_format}")
-    end
 
     return response_body
   end
@@ -70,15 +72,13 @@ module JODCovert_3_x
 
     url = URI.parse("http://localhost:8080#{$webapp_path}/converted/document.#{out_suffix}")
 
-    @log.debug(" => Calling Jodconvert 3.x OOo web service at <#{url}>...")
-
     start = Time.now if (@log.level == Logger::DEBUG)
 
     request = Net::HTTP::Post::Multipart.new(url.path, {"inputDocument"=>upload_io, "outputFormat"=>out_format})
 
-    response = nil
-
     response = Net::HTTP.start(url.host, url.port) do |http|
+      #http.read_timeout = 500
+      #http.open_timeout = 500
       response = http.request(request)
     end
     
@@ -88,5 +88,8 @@ module JODCovert_3_x
     end
 
     return response.body
+  rescue Exception => e
+    @log.error("#{e}")
+    SystemExit.new
   end
 end
