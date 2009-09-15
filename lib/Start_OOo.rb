@@ -1,7 +1,10 @@
 #!/usr/local/bin/ruby19
 
 # == Synopsis
-#   A POSTFIX script to start/stop OpenOffice headless server
+#   A POSTFIX script to start/stop OpenOffice headless server only needed
+#   for when using JODconver 2.x, not needed for 3.x as it manages the 
+#   OpenOffice directly.  
+#
 #
 # == Usage:  Start_OOo.rb {start/stop}
 #
