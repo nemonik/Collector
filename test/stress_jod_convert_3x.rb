@@ -15,7 +15,7 @@ require 'logger'
 require 'guid'
 
 class StressJODConvert3x
-  include JODCovert_3_x, Utility
+  include Utility
 
   attr_accessor :tmp_folder
   attr_accessor :urls_filename
@@ -44,6 +44,9 @@ class StressJODConvert3x
 
     initialize_urls(true, 2000)
 
+    @manager = JODCovert_3_x.instance
+    @manager.restart if !@manager.listening?
+
     @log.debug("initialized...")
 
   end
@@ -58,7 +61,7 @@ class StressJODConvert3x
 
       file_name = generate_random_type_document(@tmp_folder)
 
-      File.delete(file_name)
+      File.delete(file_name) if file_name.kind_of?(String) && File.exists?(file_name)
 
       @log.debug("deleted #{file_name}")
       @log.debug("sleeping for #{snooze}-seconds")
@@ -70,12 +73,24 @@ class StressJODConvert3x
     @log.error("Something bad happended on document #{document_count}...")
     @log.error("#{e.class}: #{e.message}")
     @log.error("#{e.backtrace.join("\n")}")
-    SystemExit.new(1)
+    #SystemExit.new(1)
+    Kernel.exit(1)
   end
 end
 
-stress = StressJODConvert3x.new(File.expand_path('~/urls.txt'), '/tmp', 5)
-stress.run
+# single threaded stress
+#stress = StressJODConvert3x.new(File.expand_path('~/urls.txt'), '/tmp', 0.00)
+#
+#stress.run
 
 
+## multi-threaded stress
+threads = []
+20.times { |i|
+  threads << Thread.new(i) {
+    stress = StressJODConvert3x.new(File.expand_path('~/urls.txt'), '/tmp', 0.00)
+    stress.run
+  }
+}
 
+threads.each {|t| t.join }

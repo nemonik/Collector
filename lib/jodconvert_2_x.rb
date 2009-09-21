@@ -1,7 +1,10 @@
 #
 #  == Synopsis
-#   A module to interface to a JODConvert 2.x web service to process
-#   documents.
+#   A Singleton class to interface to a JODConvert 2.x Web application to
+#   process documents and manage the Tomcat servlet engine hosting.
+#
+# TODO: not as complete at the 3.x version
+#
 #
 # Author::    Michael Joseph Walsh (mailto:mjwalsh_n_o__s_p_a_m@mitre.org)
 # Copyright:: Copyright (c) 2009 The MITRE Corporation.  All Rights Reserved.
@@ -9,10 +12,15 @@
 
 require 'net/http'
 require 'logger'
+require 'TomcatManager'
 
-module JODConvert_2_x
 
-  @webapp_path = 'http://localhost:8080/jodconverter-webapp-2.2.2/service'
+class JODConvert_2_x < TomcatManager
+
+  $protocol = 'http'
+  $hostname = 'localhost'
+  $port = 8080
+  $webapp_path = '/jodconverter-webapp-2.2.2/service'
 
   def process_office_doc(file_name, mime_type, accept)
 
@@ -32,7 +40,7 @@ module JODConvert_2_x
       'Accept' => accept
     }
 
-    url = URI.parse("#{webapp_path}")
+    url = URI.parse("#{$protocol}://#{$hostname}:#{$port}#{$webapp_path}")
 
     request = Net::HTTP::Post.new(url.path, headers)
     request.body = text

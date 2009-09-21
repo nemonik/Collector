@@ -26,7 +26,7 @@ require 'utility'
 
 class SendEmail
 
-  include JODCovert_3_x, Compression, Utility
+  include Utility
 
   attr_accessor :urls_filename
   attr_accessor :samples_folder
@@ -55,13 +55,14 @@ class SendEmail
     @urls = []
     @url_iterator = 0
 
+    @manager = JODCovert_3_x.instance
+    @manager.restart if !@manager.listening?
+
     @log.debug("initialized...")
 
   end
 
   def generate_docs(document_count = 100, max_paragraph_count = 20, max_url_count = 5)
-
-    jodconvert_3_x_running?
 
     FileUtils.rm_f @samples_folder if File.exists?(@samples_folder)
 

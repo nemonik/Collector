@@ -203,7 +203,7 @@ class PostfixUrlDaemon
 
             elsif ((header['Content-Type'].downcase.include? 'text/html') && (!header.has_key?('Content-Disposition')))
               log(:debug, 'handling html part...')
-
+             
               get_links(doc)
 
             elsif ((header.has_key?('Content-Disposition')) && (header['Content-Disposition'].downcase.include? 'attachment') && (!$options.ignore_attachments))
@@ -529,9 +529,9 @@ class PostfixUrlDaemon
           html = Hpricot(text, :fixup_tags => true)
 
           # pull URLs from anchor tags
-          html.search('//href').map { |href|
-            if (href['a'] != nil)
-              url = URI.extract(href['a'], $options.uri_schemes)[0]
+          html.search('//a').map { |href|
+            if (href['href'] != nil)
+              url = URI.extract(href['href'], $options.uri_schemes)[0]
               tmp_links.push(url.gsub(/\/$/,'')) if url
             end
           }
@@ -558,9 +558,9 @@ class PostfixUrlDaemon
           tmp_links = []
 
           # pull URLs from anchor tags
-          html.xpath('//href').map { |href|
-            if (href['a'] != nil)
-              url = URI.extract(href['a'], $options.uri_schemes)[0]
+          html.xpath('//a').map { |href|
+            if (href['href'] != nil)
+              url = URI.extract(href['href'], $options.uri_schemes)[0]
               tmp_links.push(url.gsub(/\/$/,'')) if url
             end
           }

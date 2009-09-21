@@ -120,7 +120,7 @@ module Utility
     else
       text = generate_text('text/html', max_paragraph_count, max_url_count)
       #@log.debug("src html document = #{text}")
-      process_document_text(text, 'text/html', 'html', $doc_types[doc_type], doc_type)
+      @manager.process_document_text(text, 'text/html', 'html', $doc_types[doc_type], doc_type)
     end
 
     #@log.debug("#{doc}")

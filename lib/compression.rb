@@ -10,11 +10,7 @@ require 'logger'
 
 module Compression
 
-  @log = Logger.new(STDOUT)
-  @log.level = Logger::DEBUG
-  @log.datetime_format = "%H:%M:%S"
-
-  def self.zip(dst, names)
+  def zip(dst, names)
     Zip::ZipOutputStream.open(dst) { |zos|
       names.each { |name|
         zos.put_next_entry(File.basename(name))
@@ -24,7 +20,7 @@ module Compression
     }
   end
 
-  def self.unzip(zip_name, dst)
+  def unzip(zip_name, dst)
     Zip::ZipFile.open(zip_name) { |zipfile|
       zipfile.each { |file|
         file_name= File.join(dst, file.name)
@@ -35,7 +31,7 @@ module Compression
     }
   end
 
-  def self.gzip(names)
+  def gzip(names)
 
     names.each { |name|
 
@@ -50,7 +46,7 @@ module Compression
 
   end
 
-  def self.gunzip(name)
+  def gunzip(name)
     Zlib::GzipReader.open(name) { |gzip|
       dst = name.gsub(/\.gz$/,'')
       @log.debug("uncompressing gzip to #{dst}")
@@ -64,19 +60,19 @@ module Compression
     FileUtils.rm(name) # to model cmd-line behavior
   end
 
-  def self.bzip2(names)
+  def bzip2(names)
     names.each { |name|
       `bzip2 #{name}`
       @log.debug("bzip2ed #{name}")
     }
   end
 
-  def self.bunzip2(name)
+  def bunzip2(name)
     `bunzip2 #{name}`
     @log.debug("bunzip2ed #{name}")
   end
 
-  def self.tar(dst_name, names)
+  def tar(dst_name, names)
     out = Archive::Tar::Minitar::Output.new(dst_name)
     names.each { |name|
       Archive::Tar::Minitar.pack_file(name, out)
@@ -85,7 +81,7 @@ module Compression
     out.close
   end
 
-  def self.untar(tar_name, dst)
+  def untar(tar_name, dst)
     Archive::Tar::Minitar.unpack(tar_name, dst)
     @log.debug("untared #{tar_name} to #{dst}")
   end
