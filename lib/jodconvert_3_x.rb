@@ -131,7 +131,7 @@ class JODCovert_3_x < TomcatManager
     return response.body
   end
 end
-
+#
 #threads = []
 #
 #5.times { |i|
@@ -148,3 +148,6 @@ end
 #}
 #
 #threads.each {|t| t.join }
+
+#manager = JODCovert_3_x.instance
+#puts("#{manager.listening?}")

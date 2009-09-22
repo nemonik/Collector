@@ -11,6 +11,8 @@ require 'net/http'
 require 'logger'
 require 'singleton'
 require 'term/ansicolor'
+require 'uri'
+
 include Term::ANSIColor
 
 
@@ -43,6 +45,7 @@ class TomcatManager
 
   $host = 'localhost'
   $port = 8080
+  $openoffice_port = 8100
   $webapp_path = '/jodconverter-sample-webapp-3.0-SNAPSHOT'
 
   $PID_DOESNT_EXIST = -1
@@ -58,18 +61,20 @@ class TomcatManager
 
   def listening?
     begin
-      Net::HTTP.start($host, $port) {|http|
-        http.head($webapp_path)
-      }
 
-      return true
-    rescue Exception
+      response = Net::HTTP.get_response(URI.parse("#{$protocol}://#{$hostname}:#{$port}#{$webapp_path}/"))
+
+      if response.class == Net::HTTPOK
+        return true
+      else
+        return false
+      end
+    rescue Exception 
       return false
     end
-
   end
 
-  def get_pid
+  def get_tomcat_pid
 
     # although "netstat -nlp | grep #{$port}" would allow me to determine the
     # pid of a specific instance of tomcat listening at $port, it possible
@@ -89,8 +94,28 @@ class TomcatManager
     return pid
   end
 
+  def get_openoffice_pid
+
+    # although "netstat -nlp | grep #{openoffice_port" would allow me to
+    # determine the pid for openoffice it possible that openoffice never
+    # binded to the $port and is still running
+
+    out = nil
+    pid = $PID_DOESNT_EXIST
+    IO.popen("ps aux | grep \"/usr/lib64/openoffice.org3/program/soffice.bin -accept=socket,host=127.0.0.1,port=#{$openoffice_port};urp;\"") {|stdout|
+      out = stdout.read
+
+      if out != nil && !out.empty?
+        pid = out.split(" ")[1]
+        break
+      end
+    }
+
+    return pid
+  end
+
   def running?
-    if get_pid != $PID_DOESNT_EXIST
+    if get_tomcat_pid != $PID_DOESNT_EXIST && get_open_office_pid != $PID_DOESNT_EXIST
       return true
     else
       return false
@@ -133,13 +158,22 @@ class TomcatManager
   private
 
   def shutdown
-    pid = get_pid
+    pid = get_tomcat_pid
 
     if pid != $PID_DOESNT_EXIST
       @log.info('Shutting down tomcat...')
       IO.popen("kill -9 #{pid}") {|stdout|
-          stdout.read
-        }
+        stdout.read
+      }
+    end
+
+    pid = get_openoffice_pid
+
+    if pid != $PID_DOESNT_EXIST
+      @log.info('Shutting down OpenOffice...')
+       IO.popen("kill -9 #{pid}") {|stdout|
+        stdout.read
+      }
     end
   end
 
