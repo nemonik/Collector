@@ -56,6 +56,6 @@ class Start_OOo
   end
 
 start_ooo = Start_OOo.new
-start_ooo.run
+start_ooo.ask_for
 
 end

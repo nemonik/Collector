@@ -6,7 +6,7 @@
 # Copyright:: Copyright (c) 2009 The MITRE Corporation.  All Rights Reserved.
 # License::
 
-require 'logger'
+require 'logger_patch'
 require 'lorem'
 require 'json'
 require 'zlib'
@@ -104,13 +104,13 @@ module Utility
 
   def generate_random_type_document(folder, max_paragraph_count = 20, max_url_count = 5)
 
-    return generate_document(folder, $doc_types.keys[rand($doc_types.keys.size) - 1], max_paragraph_count, max_url_count)
+    return generate_document(folder, JODConvert_3_x::DOC_TYPES.keys[rand( JODConvert_3_x::DOC_TYPES.keys.size) - 1], max_paragraph_count, max_url_count)
 
   end
 
   def generate_document(folder, doc_type, max_paragraph_count = 20, max_url_count = 5)
 
-    if ($doc_types[doc_type] == nil)
+    if (JODConvert_3_x::DOC_TYPES[doc_type] == nil)
       raise UnsupportedDocumentType.new("'#{doc_type}' is unsupported document type.")
     end
 
@@ -120,7 +120,7 @@ module Utility
     else
       text = generate_text('text/html', max_paragraph_count, max_url_count)
       #@log.debug("src html document = #{text}")
-      @manager.process_document_text(text, 'text/html', 'html', $doc_types[doc_type], doc_type)
+      @manager.process_document_text(text, 'text/html', 'html', JODConvert_3_x::DOC_TYPES[doc_type], doc_type)
     end
 
     #@log.debug("#{doc}")

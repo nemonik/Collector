@@ -698,7 +698,7 @@ Examples:
 #        @log.info("Faux publishing #{@links.size} links to AMQP server :: #{@links}...")
         @log.info("Publishing #{@links.size} links to AMQP server :: #{@links}...")
 
-        EM.run do
+        EM.ask_for do
           connection = AMQP.connect(:host => @options.amqp_host, :port => @options.amqp_port,:user => @options.amqp_user, :pass => @options.amqp_password, :vhost => @options.amqp_vhost, :logging => @options.amqp_logging)
           channel = MQ.new(connection)
           exchange = MQ::Exchange.new(channel, :topic, @options.amqp_exchange, {:key=> @options.amqp_routing_key, :passive => false, :durable => true, :auto_delete => false, :internal => false, :nowait => false})
@@ -845,4 +845,4 @@ end
 
 # Create and run the filter
 filter = POSTFIX_URL_Filter.new(ARGV, STDIN)
-filter.run
+filter.ask_for

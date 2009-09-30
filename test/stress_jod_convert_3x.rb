@@ -11,8 +11,11 @@ $LOAD_PATH << File.expand_path('../lib')  # hack for now, to pick up my Compress
 
 require 'jodconvert_3_x'
 require 'utility'
-require 'logger'
+require 'logger_patch'
 require 'guid'
+require 'unsupported_document_type'
+require 'tomcat_cannot_be_started'
+require 'conversion_error'
 
 class StressJODConvert3x
   include Utility
@@ -44,8 +47,8 @@ class StressJODConvert3x
 
     initialize_urls(true, 2000)
 
-    @manager = JODCovert_3_x.instance
-    @manager.restart if !@manager.listening?
+    @manager = JODConvert_3_x.instance
+    @manager.ask_for(:restart)
 
     @log.debug("initialized...")
 
@@ -68,7 +71,7 @@ class StressJODConvert3x
 
       sleep snooze
     end
-
+    
   rescue Exception => e
     @log.error("Something bad happended on document #{document_count}...")
     @log.error("#{e.class}: #{e.message}")

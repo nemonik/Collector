@@ -1,3 +1,5 @@
+#!/usr/local/bin/ruby19
+
 #
 #  == Synopsis
 #   A Singleton class to interface to a JODConvert 2.x Web application to
@@ -17,10 +19,11 @@ require 'TomcatManager'
 
 class JODConvert_2_x < TomcatManager
 
-  $protocol = 'http'
-  $hostname = 'localhost'
-  $port = 8080
-  $webapp_path = '/jodconverter-webapp-2.2.2/service'
+  $PROTOCOL = 'http'
+  $HOSTNAME = 'localhost'
+  $PORT = 8080
+  $openoffice_port = 8100
+  $WEBAPP_PATH = '/jodconverter-webapp-2.2.2/service'
 
   def process_office_doc(file_name, mime_type, accept)
 
@@ -40,7 +43,7 @@ class JODConvert_2_x < TomcatManager
       'Accept' => accept
     }
 
-    url = URI.parse("#{$protocol}://#{$hostname}:#{$port}#{$webapp_path}")
+    url = URI.parse("#{$PROTOCOL}://#{$HOSTNAME}:#{$PORT}#{$WEBAPP_PATH}")
 
     request = Net::HTTP::Post.new(url.path, headers)
     request.body = text

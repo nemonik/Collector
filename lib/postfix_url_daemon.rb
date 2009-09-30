@@ -24,6 +24,7 @@ require 'json'
 require 'fileutils'
 require 'socket'
 require 'logger'
+require 'logger_patch'
 require 'compression'
 require 'timeout'
 require 'net/http'
@@ -454,7 +455,7 @@ class PostfixUrlDaemon
             log(:info, "Publishing #{@links.size} links to AMQP server :: #{@links}...")
 
             begin
-              EM.run do
+              EM.ask_for do
                 connection = AMQP.connect(:host => $options.amqp_host, :port => $options.amqp_port,:user => $options.amqp_user, :pass => $options.amqp_password, :vhost => $options.amqp_vhost, :logging => $options.amqp_logging)
                 channel = MQ.new(connection)
                 exchange = MQ::Exchange.new(channel, :topic, $options.amqp_exchange, {:key=> $options.amqp_routing_key, :passive => false, :durable => true, :auto_delete => false, :internal => false, :nowait => false})
@@ -766,7 +767,7 @@ class PostfixUrlDaemon
 
             @log.debug("Running worker... ")
 
-            worker.run(text)
+            worker.ask_for(text)
 
           elsif (text.match(/^shutdown/i))
 
@@ -1053,8 +1054,8 @@ filter = PostfixUrlDaemon.new(ARGV)
 if $options.daemonize
   fork do
     daemonize
-    filter.run
+    filter.ask_for
   end
 else
-  filter.run
+  filter.ask_for
 end
