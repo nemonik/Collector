@@ -16,8 +16,11 @@ require 'tomcat_cannot_be_started'
 require 'conversion_error'
 require 'logger'
 require 'lorem'
+require 'thread'
+require 'term/ansicolor'
 
 class TestJODConvert_3_x < Test::Unit::TestCase
+  include Term::ANSIColor
 
   def setup
     @manager = JODConvert_3_x.instance
@@ -283,7 +286,7 @@ class TestJODConvert_3_x < Test::Unit::TestCase
     assert(value, true)
   end
 
-  def test_threaded_random_shutdown_tomcat_while_looping_through_5000_handle_jodconvert_3_x_req
+  def test_threaded_random_up_shutdown_tomcat_while_in_a_single_thread_looping_through_5000_handle_jodconvert_3_x_req
 
     # generate a temp file
 
@@ -298,17 +301,79 @@ class TestJODConvert_3_x < Test::Unit::TestCase
     Thread.new() {
       shutdown_thread_manager = JODConvert_3_x.instance
 
+      @log.debug("Started shutdown thread...")
+      
       while number_of_times > 0
         shutdown_thread_manager.ask_for(:shutdown)
         sleep 15
       end
     }
 
+    shutdown_thread.join
+
     value = true
     while (number_of_times > 0)
       @log.debug("request: #{number_of_times}")
       number_of_times -= 1
       value = value && !@manager.handle_jodconvert_3_x_req(UploadIO.new(file_name, 'text/plain'), 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'docx').nil?
+    end
+
+    File.delete(file_name)
+
+    assert(value, true)
+  end
+
+  def test_threaded_random_shutdown_of_tomcat_while_10_threads_convert_5000_through_handle_jodconvert_3_x_req
+
+    # generate a temp file
+    file_name = "/tmp/#{Guid.new.to_s}.txt"
+
+    File.open(file_name, 'w') {|f|
+      f.write(Lorem::Base.new('paragraphs', 10).output)
+    }
+
+    number_of_times = 5000;
+    mutex = Mutex.new
+
+    Thread.new() {
+      shutdown_thread_manager = JODConvert_3_x.instance
+
+      @log.debug("Started shutdown thread...")
+
+      while mutex.synchronize {number_of_times} > 0
+        sleep rand(60)
+        @log.debug("Walking up, and asking for shutdown of Tomcat...".yellow)
+        shutdown_thread_manager.ask_for(:shutdown)
+      end
+    }
+
+    value = true
+    threads = []
+
+    10.times {|i|
+      threads << Thread.new(i) {
+        manager = JODConvert_3_x.instance
+        while (mutex.synchronize {number_of_times} > 0)
+          @log.debug("request: #{mutex.synchronize {number_of_times}}")
+
+          mutex.synchronize {number_of_times -= 1}
+          
+          tmp_value = mutex.synchronize {value} && !manager.handle_jodconvert_3_x_req(UploadIO.new(file_name, 'text/plain'), 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'docx').nil?
+          mutex.synchronize {balue = tmp_value}
+
+          sleep rand(15)
+        end
+      }
+    }
+
+    threads.each {|t| t.join }
+
+    all_exit = false
+    until (all_exit == true)
+      all_exit = true
+      threads.size.times {|i|
+        all_exit = all_exit && (threads[i].status == false)
+      }
     end
 
     File.delete(file_name)

@@ -158,9 +158,9 @@ class JODConvert_3_x < TomcatManager
         end
 
       rescue Exception => e
-        
+
         if (retries -= 1) == 0
-          @log.info(" => #{e.message}; making another attempt...")
+          @log.info(" => #{e.class}: #{e.message}; making another attempt...")
           sleep 5
           retry
         else
@@ -170,7 +170,7 @@ class JODConvert_3_x < TomcatManager
       
     rescue TomcatNeedsToBeStarted, NoOfficeManagerAvailable => e
 
-      @log.info("#{e.message}; attempting to restart Tomcat.")
+      @log.info("#{e.class}: #{e.message}; attempting to restart Tomcat.")
 
       restart_retries = MAX_RETRIES
       until (restart_retries -= 1) == 0
