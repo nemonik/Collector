@@ -25,7 +25,7 @@ class TomcatManager
     TOMCAT_SHUTTINGDOWN = 'Tomcat Shuttingdown'
     TOMCAT_SHUTDOWN = 'Tomcat Shutdown'
     WEBAPP_STARTING = 'Webapp Starting'
-    WEBAPP_RUNNTING = 'Webapp Running'
+    WEBAPP_RUNNING = 'Webapp Running'
     WEBAPP_STOPPING = 'Webapp Stopping'
     WEBAPP_STOPPED = 'Webapp Stopped'
     WEBAPP_UNKNOWN = 'Webapp Unknown'

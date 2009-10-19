@@ -28,7 +28,7 @@ class JODConvert_3_x < TomcatManager
 
   DOC_TYPES = {:doc=>'application/msword', :docx=>'application/vnd.openxmlformats-officedocument.wordprocessingml.document', :txt=>'text/plain', :rtf=>'text/rtf', :odt=>'application/vnd.oasis.opendocument.text', :pdf=>'application/pdf'}
 
-  EXPECTED_STATE = {:restart=>WEBAPP_RUNNTING, :start=>WEBAPP_RUNNTING, :shutdown=>TOMCAT_SHUTDOWN}
+  EXPECTED_STATE = {:restart=>WEBAPP_RUNNING, :start=>WEBAPP_RUNNING, :shutdown=>TOMCAT_SHUTDOWN, :stop_webapp=>WEBAPP_STOPPED, :start_webapp=>WEBAPP_RUNNING}
 
   PROTOCOL = 'http'
   HOSTNAME = 'localhost'
@@ -49,12 +49,11 @@ class JODConvert_3_x < TomcatManager
   end
 
   def ask_for(action)
-
     if (!busy?)
 
       @mutex.synchronize {@running = true}
 
-      @log.warn("handling thread:#{Thread.current.object_id} asking for #{action}...")
+      @log.warn("handling thread:#{Thread.current.object_id} asking for \"#{action}\"...")
 
       begin
         case action
@@ -71,6 +70,7 @@ class JODConvert_3_x < TomcatManager
         end
       ensure
         @mutex.synchronize {
+
           @running = false
 
           @waiting_threads.each { |thread|
@@ -80,11 +80,13 @@ class JODConvert_3_x < TomcatManager
 
           @waiting_threads = []
 
-          return @state = EXPECTED_STATE[action]
+          @log.warn("state is \"#{@state}\", expected \"#{EXPECTED_STATE[action]}\", returning #{@state == EXPECTED_STATE[action]}...")
+
+          return @state == EXPECTED_STATE[action]
         }
       end
     else
-      @log.warn("thread:#{Thread.current.object_id} entering wait for \"#{EXPECTED_STATE[action]}\"...")
+      @log.warn("thread:#{Thread.current.object_id} entering wait for \"#{action}\"...")
 
       @mutex.synchronize {
         @waiting_threads << Thread.current
@@ -93,8 +95,8 @@ class JODConvert_3_x < TomcatManager
       Thread.stop
 
       @mutex.synchronize {
-        @log.warn("thread:#{Thread.current.object_id} leaving wait...")
-        return @state = EXPECTED_STATE[action]
+        @log.warn("thread:#{Thread.current.object_id} leaving wait, state is \"#{@state}\", expected \"#{EXPECTED_STATE[action]}\", returning #{@state == EXPECTED_STATE[action]}...")
+        return @state == EXPECTED_STATE[action]
       }
     end
   end
@@ -266,8 +268,13 @@ class JODConvert_3_x < TomcatManager
     else
       false
     end
+    # todo: remove rescue
+  rescue exception => e
+    @log.error("#{e.class}: #{e.message}")
+    @log.error("#{e.backtrace.join("\n")}")
+    raise e
   end
-
+  
   def start_webapp
 
     begin
@@ -300,15 +307,11 @@ class JODConvert_3_x < TomcatManager
         if listening
 
           @mutex.synchronize {
-            @state = WEBAPP_RUNNTING
+            @state = WEBAPP_RUNNING
             @restart_count += 1
           }
 
           @log.debug("JODConvert 3.x Web Service started.")
-
-          #        IO.popen("firefox http://localhost:8080/jodconverter%2Dsample%2Dwebapp%2D3%2E0%2DSNAPSHOT") {|stdout|
-          #          stdout.read
-          #        }
 
           return true
         end
@@ -357,7 +360,6 @@ class JODConvert_3_x < TomcatManager
 
   def shutdown
 
-
     @mutex.synchronize {
       @state = TOMCAT_SHUTTINGDOWN
     }
@@ -389,16 +391,28 @@ class JODConvert_3_x < TomcatManager
 
   def start
 
+    @log.debug("entered jodconvert_3_x start");
+
     begin
       super
     rescue TomcatAlreadyRunning => e
       @log.debug(e.message)
     end
-   
-    # then, if needed start the webapp
-    return start_webapp if (!webapp_listening?)
 
-    return true
+    @log.debug("does jodconvert_3_x need to start the webapp?")
+
+    # then, if needed start the webapp
+    if (!webapp_listening?)
+      return start_webapp
+    else
+      # otherwise it is listening, update the state and increment restart_count
+      @mutex.synchronize {
+        @state = WEBAPP_RUNNING
+        @restart_count += 1
+      }
+      
+      return true
+    end
   end
 
 end

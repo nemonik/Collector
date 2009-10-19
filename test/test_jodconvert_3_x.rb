@@ -354,7 +354,7 @@ class TestJODConvert_3_x < Test::Unit::TestCase
 
       while mutex.synchronize {number_of_times} > 0
         sleep rand(60)+30
-        @log.debug("Walking up, and asking for shutdown of Tomcat...".yellow)
+        @log.debug("Waking up, and asking for shutdown of Tomcat...".yellow)
         shutdown_thread_manager.ask_for(:shutdown)
       end
     }
@@ -412,7 +412,7 @@ class TestJODConvert_3_x < Test::Unit::TestCase
 
       while mutex.synchronize {number_of_times} > 0
         sleep rand(60)+30
-        @log.debug("Walking up, and asking for stop of webapp...".yellow)
+        @log.debug("Waking up, and asking for stop of webapp...".yellow)
         shutdown_thread_manager.ask_for(:stop_webapp)
       end
     }
@@ -534,7 +534,7 @@ class TestJODConvert_3_x < Test::Unit::TestCase
 
       while mutex.synchronize {number_of_times} > 0
         sleep rand(60)+30
-        @log.debug("Walking up, and asking for stop of webapp...".yellow)
+        @log.debug("Waking up, and asking for stop of webapp...".yellow)
         shutdown_thread_manager.ask_for(:stop_webapp)
       end
     }
