@@ -1,0 +1,11 @@
+break /home/walsh/Development/workspace/postfixUrlParsing/lib/jodconvert_3_x.rb:151
+break /home/walsh/Development/workspace/postfixUrlParsing/lib/jodconvert_3_x.rb:163
+break /home/walsh/Development/workspace/postfixUrlParsing/lib/jodconvert_3_x.rb:50
+break /home/walsh/Development/workspace/postfixUrlParsing/lib/jodconvert_3_x.rb:151
+break /home/walsh/Development/workspace/postfixUrlParsing/lib/jodconvert_3_x.rb:163
+break /home/walsh/Development/workspace/postfixUrlParsing/lib/tomcat_manager.rb:122
+set autoeval off
+set basename on
+set debuggertesting on
+set autolist off
+set autoirb off

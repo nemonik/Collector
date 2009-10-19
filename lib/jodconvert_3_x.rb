@@ -33,12 +33,15 @@ class JODConvert_3_x < TomcatManager
   PROTOCOL = 'http'
   HOSTNAME = 'localhost'
   PORT = 8080
-  WEBAPP_PATH = '/jodconverter-sample-webapp-3.0-SNAPSHOT'
+  WEBAPP_PATH = '/jodconverter%2Dsample%2Dwebapp%2D3%2E0%2DSNAPSHOT' #/jodconverter-sample-webapp-3.0-SNAPSHOT
   TIMEOUT = 30 # apache's default timeout is 300
   OPENOFFICE_PORT = 8100
 
+
   def initialize
     super
+    @waiting = 0
+    @waiting_threads = []
   end
 
   def busy?
@@ -48,29 +51,52 @@ class JODConvert_3_x < TomcatManager
   def ask_for(action)
 
     if (!busy?)
+
       @mutex.synchronize {@running = true}
-      case action
-      when :restart then
-        restart
-      when :start then
-        start
-      when :shutdown then
-        shutdown
-      when :start_webapp then
-        start_webapp
-      when :stop_webapp then
-        stop_webapp
+
+      @log.warn("handling thread:#{Thread.current.object_id} asking for #{action}...")
+
+      begin
+        case action
+        when :restart then
+          restart
+        when :start then
+          start
+        when :shutdown then
+          shutdown
+        when :start_webapp then
+          start_webapp
+        when :stop_webapp then
+          stop_webapp
+        end
+      ensure
+        @mutex.synchronize {
+          @running = false
+
+          @waiting_threads.each { |thread|
+            @log.warn("Awaking thread:#{thread.object_id} from wait...")
+            thread.run
+          }
+
+          @waiting_threads = []
+
+          return @state = EXPECTED_STATE[action]
+        }
       end
-      @mutex.synchronize {@running = false}
     else
-      @log.debug("Waiting for \"#{EXPECTED_STATE[action]}\"...")
-    end
+      @log.warn("thread:#{Thread.current.object_id} entering wait for \"#{EXPECTED_STATE[action]}\"...")
 
-    until !busy?
-    end
+      @mutex.synchronize {
+        @waiting_threads << Thread.current
+      }
+      
+      Thread.stop
 
-    return (@mutex.synchronize{@state} == EXPECTED_STATE[action])
-   
+      @mutex.synchronize {
+        @log.warn("thread:#{Thread.current.object_id} leaving wait...")
+        return @state = EXPECTED_STATE[action]
+      }
+    end
   end
 
   def get_openoffice_pid
@@ -99,9 +125,9 @@ class JODConvert_3_x < TomcatManager
 
   def process_office_file(file_name, file_mime_type, out_format, out_suffix)
 
-    @log.debug(" => Calling JODConvert 3.x OOo web service to convert #{file_name} to #{out_format}...")
-
     response_body = handle_jodconvert_3_x_req(UploadIO.new(file_name, file_mime_type), out_format, out_suffix)
+
+    @log.debug(" => Called JODConvert 3.x OOo web service to convert #{file_name} to #{out_format}...")
 
     return response_body
   end
@@ -136,8 +162,6 @@ class JODConvert_3_x < TomcatManager
 
     begin
 
-      @log.debug(" => Sending request Jodconvert 3.x OOo web service; #{retries} retries remain")
-
       request = Net::HTTP::Post::Multipart.new(url.path, {"inputDocument"=>upload_io, "outputFormat"=>out_format})
 
       begin
@@ -148,7 +172,8 @@ class JODConvert_3_x < TomcatManager
         end
 
         if (response.class != Net::HTTPOK)
-          raise TomcatNeedsToBeStarted.new("Service responsed with #{response.code}; #{response.message}; Tomcat needs to be restart.")
+          @log.debug("Service responsed with #{response.class}; #{response.code}; #{response.message}; #{response.body}; Tomcat needs to be restart.")
+          raise TomcatNeedsToBeStarted.new("Service responsed with #{response.class}; #{response.code}; #{response.message}; #{response.body}; Tomcat needs to be restart.")
         elsif (response.body =~ /javax.servlet.ServletException/)
           if (response.body =~ /no office manager available/)
             raise NoOfficeManagerAvailable.new("No office manager is available;")
@@ -162,6 +187,8 @@ class JODConvert_3_x < TomcatManager
         if (retries -= 1) == 0
           @log.info(" => #{e.class}: #{e.message}; making another attempt...")
           sleep 5
+          @log.debug(" => Retrying Jodconvert 3.x OOo web service; #{retries} retries remain")
+
           retry
         else
           raise TomcatNeedsToBeStarted.new("#{e.message}; made #{MAX_RETRIES} attempts; Tomcat needs a forced restart")
@@ -186,7 +213,7 @@ class JODConvert_3_x < TomcatManager
 
     if (@log.level == Logger::DEBUG)
       stop = Time.now
-      @log.debug(" => Jodconvert 3.x OOo web service responded in #{stop-start} seconds.")
+      @log.debug(" => Jodconvert 3.x OOo web service handled the request in #{stop-start} seconds.")
     end
 
     return response.body
@@ -206,6 +233,26 @@ class JODConvert_3_x < TomcatManager
       return false
     end
   end
+
+  def webapp_listening?
+    begin
+      response = Net::HTTP.get_response(HOSTNAME, "#{WEBAPP_PATH}/", PORT)
+      
+      @log.debug("#{response.class} : #{response.message}")
+
+      if response.class == Net::HTTPOK
+        @log.debug('Webapp is listening.')
+        return true
+      end
+    rescue Exception => e
+      @log.debug("#{e.class} : #{e.message}")
+    end
+
+    @log.debug('Webapp is not listening.')
+    return false
+  end
+
+
 
   private
 
@@ -227,8 +274,6 @@ class JODConvert_3_x < TomcatManager
       @mutex.synchronize {
         @state = WEBAPP_STARTING
       }
-      
-      @log.debug("starting webapp...")
 
       req = Net::HTTP::Get.new("/manager/html/start?path=#{WEBAPP_PATH}")
       req.basic_auth(TOMCAT_MANAGER_USER, TOMCAT_MANAGER_PASSWORD)
@@ -239,14 +284,34 @@ class JODConvert_3_x < TomcatManager
 
       if response.class == Net::HTTPOK
 
-        @restart_count += 1
+        # the manager kicked the webapp off, now poll 'til up and running.
 
-        @mutex.synchronize {
-          @state = WEBAPP_RUNNTING
-        }
+        retries = MAX_RETRIES
+        listening = false
+        until (retries -= 1) == 0
+          if (webapp_listening?)
+            listening = true
+            break
+          end
 
-        @log.debug("JODConvert 3.x Web Service started.")
-        return true
+          sleep 5
+        end
+
+        if listening
+
+          @mutex.synchronize {
+            @state = WEBAPP_RUNNTING
+            @restart_count += 1
+          }
+
+          @log.debug("JODConvert 3.x Web Service started.")
+
+          #        IO.popen("firefox http://localhost:8080/jodconverter%2Dsample%2Dwebapp%2D3%2E0%2DSNAPSHOT") {|stdout|
+          #          stdout.read
+          #        }
+
+          return true
+        end
       end
     rescue Exception
     end
@@ -255,7 +320,7 @@ class JODConvert_3_x < TomcatManager
       @state = WEBAPP_UNKNOWN
     }
 
-    @log.debug("JodConvert 3.x Web Service failed to start.  (2)")
+    @log.debug("JodConvert 3.x Web Service failed to start.")
     return false
   end
 
@@ -292,6 +357,7 @@ class JODConvert_3_x < TomcatManager
 
   def shutdown
 
+
     @mutex.synchronize {
       @state = TOMCAT_SHUTTINGDOWN
     }
@@ -299,39 +365,40 @@ class JODConvert_3_x < TomcatManager
     pid = get_tomcat_pid
 
     if pid != PID_DOESNT_EXIST
-      @log.info('Shutting down tomcat...')
       IO.popen("kill -9 #{pid}") {|stdout|
         stdout.read
       }
+      @log.info('Shutdown tomcat')
     end
 
     pid = get_openoffice_pid
 
     if pid != PID_DOESNT_EXIST
-      @log.info('Shutting down OpenOffice...')
       IO.popen("kill -9 #{pid}") {|stdout|
         stdout.read
       }
+      @log.info('Shutdown OpenOffice')
     end
 
     @mutex.synchronize {
       @state = TOMCAT_SHUTDOWN
     }
 
-    @log.debug("Tomcat shutdown")
     return true
   end
 
   def start
 
-    super
-
-    # then, if needed start the webapp
-    if (webapp_listening?)
-      return true;
-    else
-      return start_webapp;
+    begin
+      super
+    rescue TomcatAlreadyRunning => e
+      @log.debug(e.message)
     end
+   
+    # then, if needed start the webapp
+    return start_webapp if (!webapp_listening?)
+
+    return true
   end
 
 end

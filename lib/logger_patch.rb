@@ -20,6 +20,7 @@ class Logger
   def add(severity, message = nil, progname = nil, &block)
     progname = "thread #{Thread.current.object_id} : #{progname}"
     progname = progname.red if severity == ERROR
+    progname = progname.yellow if severity == WARN
 
     original_add(severity, message, progname, &block)
   end

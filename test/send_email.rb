@@ -22,11 +22,11 @@ require 'fileutils'
 require 'compression'
 require 'jodconvert_3_x'
 require 'utility'
-
+require 'tomcat_already_running'
 
 class SendEmail
 
-  include Utility
+  include Utility, Compression
 
   attr_accessor :urls_filename
   attr_accessor :samples_folder
@@ -55,8 +55,14 @@ class SendEmail
     @urls = []
     @url_iterator = 0
 
-    @manager = JODCovert_3_x.instance
-    @manager.restart if !@manager.listening?
+    @manager = JODConvert_3_x.instance
+
+    begin
+      @log.debug("asking for tomcat to start")
+      @manager.ask_for(:start);
+    rescue TomcatAlreadyRunning
+      @log.debug("Tomcat already running.")
+    end
 
     @log.debug("initialized...")
 
@@ -69,8 +75,8 @@ class SendEmail
     @log.debug("creating #{document_count} document(s)...")
 
     (0..document_count).each {|i|
-      @log.debug("generating #{i}/#{document_count}")
       generate_random_type_document(@samples_folder, max_paragraph_count, max_url_count)
+      @log.debug("generated #{i}/#{document_count}")
     }
 
   end
@@ -78,21 +84,21 @@ class SendEmail
   def send(from, to, filepaths, compress = false, max_paragraph_count = 20, max_url_count = 5)
     subject = "Sending "
 
-    @log.debug("Creating message object...")
     message = RMail::Message::new
     message.header['From'] = "<#{from}>"
     message.header['To'] = "<#{to}>"
     message.header['Date'] = Time::new.rfc2822
+    @log.debug("Created message object...")
 
-    @log.debug("Creating text part...")
     text_part = RMail::Message::new
     text_part.header['Content-Type'] = 'TEXT/PLAIN; format=flowed; charset=utf-8'
     text_part.body = generate_text('text/plain', max_paragraph_count, max_url_count)
+    @log.debug("Created text part...")
 
-    @log.debug("Creating html part...")
     html_part = RMail::Message::new
     html_part.header['Content-Type'] = 'text/html, charset=utf-8'
     html_part.body = generate_text('text/html', max_paragraph_count, max_url_count)
+    @log.debug("Created html part...")
 
     attachments = Array.new
     dst = File.join('/tmp', Guid.new.to_s)
@@ -111,28 +117,28 @@ class SendEmail
       if (filepaths.size > 1)
         if (rand() > 0.50)
           dst = File.join(dst, 'archive.zip')
-          Compression.zip(dst, tmp_filepaths)
+          zip(dst, tmp_filepaths)
         else
           dst = File.join(dst, 'archive.tar')
-          Compression.tar(dst, tmp_filepaths)
+          tar(dst, tmp_filepaths)
 
           if (rand() > 0.5)
-            Compression.gzip([dst])
+            gzip([dst])
             dst += '.gz'
           else
-            Compression.bzip2([dst])
+            bzip2([dst])
             dst += '.bz2'
           end
         end
       else
         if ((r = rand()) > 0.66)
-          Compression.gzip(tmp_filepaths)
+          gzip(tmp_filepaths)
           dst = tmp_filepaths[0] + '.gz'
         elsif (r > 0.33)
           dst = tmp_filepaths[0] + '.zip'
-          Compression.zip(dst, tmp_filepaths)
+          zip(dst, tmp_filepaths)
         elsif (r > 0.0)
-          Compression.bzip2(tmp_filepaths)
+          bzip2(tmp_filepaths)
           dst = tmp_filepaths[0] + '.bz2'
         end
       end
@@ -165,8 +171,6 @@ class SendEmail
           content_type = (mime_type ? mime_type.content_type : 'application/binary')
           filename = File.split(filepath)[1]
 
-          @log.debug("Creating attachment part for #{filename}")
-
           if (attachments.empty?)
             subject += "#{filename}"
           else
@@ -179,6 +183,8 @@ class SendEmail
           attachment_part.body = [File.open(filepath).read].pack('m')
 
           attachments.push(attachment_part)
+
+          @log.debug("Created attachment part for #{filename}")
         else
           @log.debug("Skipping #{filepath}")
         end
@@ -202,9 +208,11 @@ class SendEmail
     smtp = Net::SMTP.start("localhost.localdomain", 25)
     @msg_count += 1
     message.header['X-Count'] = "#{@msg_count}"
-    @log.debug("Sending message #{@msg_count}...")
+
     smtp.send_message message.to_s, from, to
     smtp.finish
+
+    @log.debug("Sent message #{@msg_count}...")
   end
 
   def send_all(from, to, path, sleep_sec = 0, attach_max = 1, compress = false, max_paragraph_count = 20, max_url_count = 5)
@@ -267,6 +275,6 @@ puts send_email.urls
 send_email.initialize_urls(true, 2000)
 # generate 500 docs from the URLs containing up 20 paragraphs each containg up
 # 5 urls
-send_email.generate_docs(500, 20, 5)
+#send_email.generate_docs(500, 20, 5)
 #send_email.send_all('walsh@localhost.localdomain', 'walsh@localhost.localdomain', '/tmp/sample')
-send_email.keep_sending('walsh@localhost.localdomain', 'walsh@localhost.localdomain', '/tmp/samples', 10, 4, true, 20, 5)
+send_email.keep_sending('walsh@localhost.localdomain', 'walsh@localhost.localdomain', File.expand_path('~/samples'), 2, 4, true, 20, 5)

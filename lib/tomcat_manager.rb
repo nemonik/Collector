@@ -13,6 +13,7 @@ require 'logger_patch'
 require 'uri'
 require 'singleton'
 require 'tomcat_cannot_be_started'
+require 'tomcat_already_running'
 
 class TomcatManager
   include Singleton
@@ -74,21 +75,6 @@ class TomcatManager
     return false
   end
 
-  def webapp_listening?
-    begin
-      response = Net::HTTP.get_response(URI.parse("#{PROTOCOL}://#{HOSTNAME}:#{PORT}#{WEBAPP_PATH}"))
-
-      if response.class == Net::HTTPOK
-        @log.debug('Webapp is listening.')
-        return true
-      end
-    rescue Exception
-    end
-
-    @log.debug('Webapp is not listening.')
-    return false
-  end
-
   def get_tomcat_pid
 
     # although "netstat -nlp | grep #{PORT}" would allow me to determine the
@@ -100,6 +86,9 @@ class TomcatManager
       out = stdout.read
 
       out.split(/\n/).each { |line|
+
+        @log.debug("line = \"#{line}\"")
+        
         if line.include? 'java'
           pid = line.split(" ")[1]
           break
@@ -133,34 +122,41 @@ class TomcatManager
 
   def start
 
-    @mutex.synchronize {
-      @state = TOMCAT_STARTING
-    }
+    if !running?
+      @mutex.synchronize {
+        @state = TOMCAT_STARTING
+      }
 
-    if (!running?)
-      @log.info("Starting tomcat...")
       IO.popen('/home/walsh/apache-tomcat-6.0.20/bin/startup.sh') {|stdout|
         stdout.read
       }
+
+      @log.info("Tomcat starting...")
+    else
+      if (manager_listening?)
+        # tomcat is up and running and the manager is listening so
+        # raise and exception to the start
+        raise TomcatAlreadyRunning
+      else
+        # tomcat appears to be running, but the manager is not listening.
+        # force a shutdown, and attempt to start.
+        shutdown
+        return start
+      end
     end
 
     retries = 0
-    begin
 
-      until (retries +=1) == MAX_RETRIES
+    until (retries +=1) == MAX_RETRIES
 
-        if (manager_listening?)
-          @mutex.synchronize {
-            @state = TOMCAT_RUNNING
-          }
-          return true
-        end
-
-        sleep 5
+      if (manager_listening?)
+        @mutex.synchronize {
+          @state = TOMCAT_RUNNING
+        }
+        return true
       end
-    rescue Exception => e
-      @log.debug("#{e}")
-      retry
+
+      sleep 5
     end
 
     throw TomcatCannotBeStarted.new("#{retries} attempts were made to restart Tomcat")
@@ -175,10 +171,10 @@ class TomcatManager
     pid = get_tomcat_pid
 
     if pid != PID_DOESNT_EXIST
-      @log.info('Shutting down tomcat...')
       IO.popen("kill -9 #{pid}") {|stdout|
         stdout.read
       }
+      @log.info('Shutdown tomcat')
     end
 
     @mutex.synchronize {

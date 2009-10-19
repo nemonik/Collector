@@ -2,17 +2,16 @@
 
 #
 # == Synopsis
-#   A Runtime error used to denote the JODConvert 3.x service does not
-#   support the type of document sent for conversion.
+#   A Runtime error used to denote that Tomcat could not be started.
 #
 # Author::    Michael Joseph Walsh (mailto:mjwalsh_n_o__s_p_a_m@mitre.org)
 # Copyright:: Copyright (c) 2009 The MITRE Corporation.  All Rights Reserved.
 # License::
 
-class UnsupportedDocumentType < RuntimeError
+class TomcatAlreadyRunning < RuntimeError
   def initialize(message)
     if message == nil
-      super("Unsupported document type.")
+      super("Tomcat is already running.")
     else
       super(message)
     end

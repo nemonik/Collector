@@ -47,7 +47,7 @@ class PostfixUrlDaemon
 
   class ThreadPool
     class Worker
-      include JODCovert_3_x
+      include Compression
 
       def initialize(log, name)
         @log = log
@@ -61,6 +61,8 @@ class PostfixUrlDaemon
         @mutex = Mutex.new
         @mutex.synchronize {@waiting = true}
         @mutex.synchronize {@running = false}
+
+        @manager = JODConvert_3_x.instance
 
         @thread = Thread.new do
           while @mutex.synchronize {@waiting}
@@ -293,7 +295,7 @@ class PostfixUrlDaemon
         elsif (info[1].include?('openoffice.org-calc'))
           # calc/excel docs need to first be converted to a csv, then
           # the urls pulled from
-          if (csv = process_office_file(file_name, info[0], 'text/csv', 'csv'))
+          if (csv = @manager.process_office_file(file_name, info[0], 'text/csv', 'csv'))
             file_name = file_name + '.csv'
             File.open(file_name, 'wb') {|f|
               f.write(csv)
@@ -306,7 +308,7 @@ class PostfixUrlDaemon
           # instead need a two step process of first being converted to
           # pdf and then to text
           # TODO: try another way, now that we are using JODconvert 3.0
-          if (pdf = process_office_file(file_name, info[0], 'application/pdf', 'pdf'))
+          if (pdf = @manager.process_office_file(file_name, info[0], 'application/pdf', 'pdf'))
             file_name = file_name + '.pdf'
             File.open(file_name, 'wb') {|f|
               f.write(pdf)
@@ -321,9 +323,9 @@ class PostfixUrlDaemon
           end
 
         elsif (info[1].include?('openoffice'))
-          html = process_office_file(file_name, info[0], 'text/html', 'html')
+          html = @manager.process_office_file(file_name, info[0], 'text/html', 'html')
 
-           log(:debug, " => service returned : #{html}")
+          log(:debug, " => service returned : #{html}")
 
           get_links(html) if html
 
@@ -341,17 +343,17 @@ class PostfixUrlDaemon
         log(:debug, " => processing #{compression} compressed #{file_name}...")
 
         if (compression == 'application/zip')
-          Compression.unzip(file_name, dst)
+          unzip(file_name, dst)
           FileUtils.rm(file_name)
 
         elsif (compression == 'application/x-gzip')
-          Compression.gunzip(file_name)
+          gunzip(file_name)
 
         elsif (compression == 'application/x-bzip')
-          Compression.bunzip2(file_name)
+          bunzip2(file_name)
 
         elsif (compression == 'application/x-tar')
-          Compression.untar(file_name, dst)
+          untar(file_name, dst)
           FileUtils.rm(file_name)
 
         else
@@ -455,7 +457,7 @@ class PostfixUrlDaemon
             log(:info, "Publishing #{@links.size} links to AMQP server :: #{@links}...")
 
             begin
-              EM.ask_for do
+              EM.run do
                 connection = AMQP.connect(:host => $options.amqp_host, :port => $options.amqp_port,:user => $options.amqp_user, :pass => $options.amqp_password, :vhost => $options.amqp_vhost, :logging => $options.amqp_logging)
                 channel = MQ.new(connection)
                 exchange = MQ::Exchange.new(channel, :topic, $options.amqp_exchange, {:key=> $options.amqp_routing_key, :passive => false, :durable => true, :auto_delete => false, :internal => false, :nowait => false})
@@ -749,102 +751,106 @@ class PostfixUrlDaemon
       
       Thread.start(server.accept) do |socket|
 
-        mutex.synchronize { connections += 1 }
+        begin 
+          mutex.synchronize { connections += 1 }
 
-        @log.debug "Handling connection from #{socket.peeraddr[2]}:#{socket.peeraddr[1]}..."
+          @log.debug "Handling connection from #{socket.peeraddr[2]}:#{socket.peeraddr[1]}..."
 
-        if (socket.peeraddr[2].match(/^localhost/))
+          if (socket.peeraddr[2].match(/^localhost/))
 
-          text = socket.read if not socket.closed?
+            text = socket.read if not socket.closed?
 
-          if (text.match(/^From/))
+            if (text.match(/^From/))
 
-            @log.debug("Processing email, getting worker...")
+              @log.debug("Processing email, getting worker...")
 
-            socket.close if not socket.closed?
+              socket.close if not socket.closed?
 
-            worker = $pool.get_worker
+              worker = $pool.get_worker
 
-            @log.debug("Running worker... ")
+              @log.debug("Running worker... ")
 
-            worker.ask_for(text)
+              worker.run(text)
 
-          elsif (text.match(/^shutdown/i))
+            elsif (text.match(/^shutdown/i))
 
-            @log.debug("Recieved shutdown command...")
+              @log.debug("Recieved shutdown command...")
 
-            socket.close if not socket.closed?
+              socket.close if not socket.closed?
 
-            shutdown = true
-            server.shutdown(2)
+              shutdown = true
+              server.shutdown(2)
 
-          elsif (text.match(/^get count/i))
+            elsif (text.match(/^get count/i))
 
-            @log.debug("Writing count to client...")
+              @log.debug("Writing count to client...")
 
-            begin
-              $count_mutex.synchronize {
-                value ="#{$count}\n"
+              begin
+                $count_mutex.synchronize {
+                  value ="#{$count}\n"
 
-                if $count >= ($options.max_count - ($options.max_count/3)) 
-                  value = value.red
-                elsif $count >= ($options.max_count - ($options.max_count * 2/3)) 
-                  value = value.yellow
-                elsif $count < ($options.max_count - ($options.max_count * 2/3)) 
-                  value = value.green
-                end    
+                  if $count >= ($options.max_count - ($options.max_count/3))
+                    value = value.red
+                  elsif $count >= ($options.max_count - ($options.max_count * 2/3))
+                    value = value.yellow
+                  elsif $count < ($options.max_count - ($options.max_count * 2/3))
+                    value = value.green
+                  end
                 
-                socket.write(value)
+                  socket.write(value)
 
-              }
-              socket.close
-            end if not socket.closed?
+                }
+                socket.close
+              end if not socket.closed?
 
-          elsif (text.match(/^set count/i))
+            elsif (text.match(/^set count/i))
 
-            @log.debug("Setting count to value provide from client...")
+              @log.debug("Setting count to value provide from client...")
 
-            begin
-              $count_mutex.synchronize {
-                #                value = text.match(/[0-9].*/)[0]
-                if (value = text.match(/[0-9].*/)[0]) != 0
-                  $count = value.to_i
-                  socket.write("count set to #{$count}\n".green)
-                else
-                  socket.write("count remains #{$count}\n".red)
-                end
-              }
-              socket.close
-            end if not socket.closed?
+              begin
+                $count_mutex.synchronize {
+                  #                value = text.match(/[0-9].*/)[0]
+                  if (value = text.match(/[0-9].*/)[0]) != 0
+                    $count = value.to_i
+                    socket.write("count set to #{$count}\n".green)
+                  else
+                    socket.write("count remains #{$count}\n".red)
+                  end
+                }
+                socket.close
+              end if not socket.closed?
 
-          elsif (text.match(/^get pool/i))
+            elsif (text.match(/^get pool/i))
 
-            @log.debug("Writing worker pool status to client...")
+              @log.debug("Writing worker pool status to client...")
 
-            begin
-              $pool.status_of_workers.each {|status|
-                socket.write("#{status}\n")
-              }
-              socket.close
-            end if not socket.closed?
-          elsif (text.match(/^get connections/i))
+              begin
+                $pool.status_of_workers.each {|status|
+                  socket.write("#{status}\n")
+                }
+                socket.close
+              end if not socket.closed?
+            elsif (text.match(/^get connections/i))
             
-            @log.debug("Writing connection count to client...")
+              @log.debug("Writing connection count to client...")
             
-            begin
-              socket.write("#{mutex.synchronize {connections}}\n")
-              socket.close
-            end if not socket.closed?
-          else
-            @log.error("Unexpected data!")
-            @log.error("=========\n#{text}\n=========\n")
-            socket.close if not socket.closed?
+              begin
+                socket.write("#{mutex.synchronize {connections}}\n")
+                socket.close
+              end if not socket.closed?
+            else
+              @log.error("Unexpected data!")
+              @log.error("=========\n#{text}\n=========\n")
+              socket.close if not socket.closed?
+            end
+
+            @log.debug("Connection handler done...")
+            mutex.synchronize { connections -= 1 }
           end
-
-          @log.debug("Connection handler done...")
-          mutex.synchronize { connections -= 1 }
+        rescue Errno::EPIPE => e
+          @log.error("#{e.class} : #{e.msg}");
         end
-      end 
+      end
     end
 
     @log.debug("Shutting down HoneyClient POSTFIX URL daemon on #{$options.port}...")
@@ -1054,8 +1060,8 @@ filter = PostfixUrlDaemon.new(ARGV)
 if $options.daemonize
   fork do
     daemonize
-    filter.ask_for
+    filter.run
   end
 else
-  filter.ask_for
+  filter.run
 end

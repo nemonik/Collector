@@ -9,5 +9,11 @@
 # License::
 
 class TomcatNeedsToBeStarted < RuntimeError
-
+  def initialize(message)
+    if message == nil
+      super("Tomcat needs to be restarted.")
+    else
+      super(message)
+    end
+  end
 end

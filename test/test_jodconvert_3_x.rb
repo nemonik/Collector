@@ -34,6 +34,18 @@ class TestJODConvert_3_x < Test::Unit::TestCase
    
   end
 
+  def test_tomcat_running
+    value = false
+
+    if @manager.running?
+      value = @manager.manager_listening?
+    else
+      value = @manager.ask_for(:start)
+    end
+
+    assert(value, true)
+  end
+
   def test_start_from_shutdown
     value = false
     value = @manager.ask_for(:start) if @manager.ask_for(:shutdown)
@@ -341,7 +353,7 @@ class TestJODConvert_3_x < Test::Unit::TestCase
       @log.debug("Started shutdown thread...")
 
       while mutex.synchronize {number_of_times} > 0
-        sleep rand(60)
+        sleep rand(60)+30
         @log.debug("Walking up, and asking for shutdown of Tomcat...".yellow)
         shutdown_thread_manager.ask_for(:shutdown)
       end
@@ -359,7 +371,7 @@ class TestJODConvert_3_x < Test::Unit::TestCase
           mutex.synchronize {number_of_times -= 1}
           
           tmp_value = mutex.synchronize {value} && !manager.handle_jodconvert_3_x_req(UploadIO.new(file_name, 'text/plain'), 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'docx').nil?
-          mutex.synchronize {balue = tmp_value}
+          mutex.synchronize {value = tmp_value}
 
           sleep rand(15)
         end
@@ -381,4 +393,187 @@ class TestJODConvert_3_x < Test::Unit::TestCase
     assert(value, true)
   end
 
+  def test_threaded_random_of_stop_webapp_while_10_threads_convert_5000_through_handle_jodconvert_3_x_req
+
+    # generate a temp file
+    file_name = "/tmp/#{Guid.new.to_s}.txt"
+
+    File.open(file_name, 'w') {|f|
+      f.write(Lorem::Base.new('paragraphs', 10).output)
+    }
+
+    number_of_times = 5000;
+    mutex = Mutex.new
+
+    Thread.new() {
+      shutdown_thread_manager = JODConvert_3_x.instance
+
+      @log.debug("Started stop webapp thread...")
+
+      while mutex.synchronize {number_of_times} > 0
+        sleep rand(60)+30
+        @log.debug("Walking up, and asking for stop of webapp...".yellow)
+        shutdown_thread_manager.ask_for(:stop_webapp)
+      end
+    }
+
+    value = true
+    threads = []
+
+    10.times {|i|
+      threads << Thread.new(i) {
+        manager = JODConvert_3_x.instance
+        while (mutex.synchronize {number_of_times} > 0)
+          @log.debug("request: #{mutex.synchronize {number_of_times}}")
+
+          mutex.synchronize {number_of_times -= 1}
+
+          tmp_value = mutex.synchronize {value} && !manager.handle_jodconvert_3_x_req(UploadIO.new(file_name, 'text/plain'), 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'docx').nil?
+          mutex.synchronize {value = tmp_value}
+
+          sleep rand(15)
+        end
+      }
+    }
+
+    threads.each {|t| t.join }
+
+    all_exit = false
+    until (all_exit == true)
+      all_exit = true
+      threads.size.times {|i|
+        all_exit = all_exit && (threads[i].status == false)
+      }
+    end
+
+    File.delete(file_name)
+
+    assert(value, true)
+  end
+
+
+  def test_threaded_random_kill_openoffice_while_10_threads_convert_5000_through_handle_jodconvert_3_x_req
+
+    # generate a temp file
+    file_name = "/tmp/#{Guid.new.to_s}.txt"
+
+    File.open(file_name, 'w') {|f|
+      f.write(Lorem::Base.new('paragraphs', 10).output)
+    }
+
+    number_of_times = 5000;
+    mutex = Mutex.new
+
+    Thread.new() {
+      shutdown_thread_manager = JODConvert_3_x.instance
+
+      @log.debug("Started kill openoffice thread...")
+
+      while mutex.synchronize {number_of_times} > 0
+        sleep rand(60)+30
+
+        if ((pid = shutdown_thread_manager.get_openoffice_pid) != JODConvert_3_x::PID_DOESNT_EXIST)
+          @log.info('Shutting down OpenOffice...'.yellow)
+          IO.popen("kill -9 #{pid}") {|stdout|
+            stdout.read
+          }
+        end
+      end
+    }
+
+    value = true
+    threads = []
+
+    10.times {|i|
+      threads << Thread.new(i) {
+        manager = JODConvert_3_x.instance
+        while (mutex.synchronize {number_of_times} > 0)
+          @log.debug("request: #{mutex.synchronize {number_of_times}}")
+
+          mutex.synchronize {number_of_times -= 1}
+
+          tmp_value = mutex.synchronize {value} && !manager.handle_jodconvert_3_x_req(UploadIO.new(file_name, 'text/plain'), 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'docx').nil?
+          mutex.synchronize {value = tmp_value}
+
+          sleep rand(15)
+        end
+      }
+    }
+
+    threads.each {|t| t.join }
+
+    all_exit = false
+    until (all_exit == true)
+      all_exit = true
+      threads.size.times {|i|
+        all_exit = all_exit && (threads[i].status == false)
+      }
+    end
+
+    File.delete(file_name)
+
+    assert(value, true)
+  end
+
+  def test_threaded_random_of_stop_webapp_while_10_threads_convert_5000_through_handle_jodconvert_3_x_req
+
+    # generate a temp file
+    file_name = "/tmp/#{Guid.new.to_s}.txt"
+
+    File.open(file_name, 'w') {|f|
+      f.write(Lorem::Base.new('paragraphs', 10).output)
+    }
+
+    number_of_times = 5000;
+    mutex = Mutex.new
+
+    Thread.new() {
+      shutdown_thread_manager = JODConvert_3_x.instance
+
+      @log.debug("Started stop webapp thread...")
+
+      while mutex.synchronize {number_of_times} > 0
+        sleep rand(60)+30
+        @log.debug("Walking up, and asking for stop of webapp...".yellow)
+        shutdown_thread_manager.ask_for(:stop_webapp)
+      end
+    }
+
+    value = true
+    threads = []
+
+    10.times {|i|
+      threads << Thread.new(i) {
+        manager = JODConvert_3_x.instance
+        while (mutex.synchronize {number_of_times} > 0)
+          @log.debug("request: #{mutex.synchronize {number_of_times}}")
+
+          mutex.synchronize {number_of_times -= 1}
+
+          tmp_value = mutex.synchronize {value} && !manager.handle_jodconvert_3_x_req(UploadIO.new(file_name, 'text/plain'), 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'docx').nil?
+          mutex.synchronize {value = tmp_value}
+
+          sleep rand(15)
+        end
+      }
+    }
+
+    threads.each {|t| t.join }
+
+    all_exit = false
+    until (all_exit == true)
+      all_exit = true
+      threads.size.times {|i|
+        all_exit = all_exit && (threads[i].status == false)
+      }
+    end
+
+    File.delete(file_name)
+
+    assert(value, true)
+  end
 end
+
+
+
+
