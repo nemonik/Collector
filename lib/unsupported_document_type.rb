@@ -10,11 +10,7 @@
 # License::
 
 class UnsupportedDocumentType < RuntimeError
-  def initialize(message)
-    if message == nil
-      super("Unsupported document type.")
-    else
-      super(message)
-    end
+  def initialize(message = "Unsupported document type.")
+    super(message)
   end
 end

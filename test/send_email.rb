@@ -81,7 +81,7 @@ class SendEmail
 
   end
 
-  def send(from, to, filepaths, compress = false, max_paragraph_count = 20, max_url_count = 5)
+  def send(from, to, filepaths, compress = false, max_paragraph_count = 20, max_url_count = 5, chance_of_attachment = 90)
     subject = "Sending "
 
     message = RMail::Message::new
@@ -103,7 +103,7 @@ class SendEmail
     attachments = Array.new
     dst = File.join('/tmp', Guid.new.to_s)
 
-    if ((compress) && (filepaths.size > 0) && (rand() > 0.5))
+    if ((compress) && (filepaths.size > 0) && (rand() > (1 - chance_of_attachment * 0.01)))
 
       Dir.mkdir(dst)
 
@@ -215,7 +215,7 @@ class SendEmail
     @log.debug("Sent message #{@msg_count}...")
   end
 
-  def send_all(from, to, path, sleep_sec = 0, attach_max = 1, compress = false, max_paragraph_count = 20, max_url_count = 5)
+  def send_all(from, to, path, sleep_sec = 0, attach_max = 1, compress = false, max_paragraph_count = 20, max_url_count = 5, chance_of_attachment = 90)
 
     filepaths = Array.new
     attach_count = rand(attach_max)
@@ -237,7 +237,7 @@ class SendEmail
         if ((filepaths.size == attach_count) || (at == entries.size))
           @log.debug("sending #{filepaths}")
           @log.debug("===========================")
-          send(from, to, filepaths, compress, max_paragraph_count, max_url_count)
+          send(from, to, filepaths, compress, max_paragraph_count, max_url_count, chance_of_attachment)
           if (sleep_sec == -1)
             random_sleep_sec = rand()
             @log.debug("sleeping #{random_sleep_sec} seconds...")
@@ -256,11 +256,11 @@ class SendEmail
     }
   end
 
-  def keep_sending(from, to, path, sleep_sec = 0, attach_max = 1, compress = false, max_paragraph_count = 20, max_url_count = 5)
+  def keep_sending(from, to, path, sleep_sec = 0, attach_max = 1, compress = false, max_paragraph_count = 20, max_url_count = 5, chance_of_attachment = 90)
     l = 0
     loop do
       @log.debug("starting interation #{l}")
-      send_all(from, to, path, sleep_sec, attach_max, compress, max_paragraph_count, max_url_count)
+      send_all(from, to, path, sleep_sec, attach_max, compress, max_paragraph_count, max_url_count, chance_of_attachment)
       l += 1
     end
   end
@@ -277,4 +277,4 @@ send_email.initialize_urls(true, 2000)
 # 5 urls
 #send_email.generate_docs(500, 20, 5)
 #send_email.send_all('walsh@localhost.localdomain', 'walsh@localhost.localdomain', '/tmp/sample')
-send_email.keep_sending('walsh@localhost.localdomain', 'walsh@localhost.localdomain', File.expand_path('~/samples'), 2, 4, true, 20, 5)
+send_email.keep_sending('walsh@localhost.localdomain', 'walsh@localhost.localdomain', File.expand_path('~/samples'), 2, 4, true, 20, 5, 90)

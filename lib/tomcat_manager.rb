@@ -184,20 +184,3 @@ class TomcatManager
     return true
   end
 end
-
-#threads = []
-#
-#5.times { |i|
-#  threads << Thread.new(i) {
-#    puts "#{Thread.current.object_id} : started thread #{i}"
-#    manager = TomcatManager.instance
-#    loop do
-#      seconds = rand(60)
-#      puts "#{Thread.current.object_id} : Sleeping for #{seconds}-seconds..."
-#      sleep seconds
-#      manager.restart
-#    end
-#  }
-#}
-#
-#threads.each {|t| t.join }

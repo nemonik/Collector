@@ -37,11 +37,12 @@ class JODConvert_3_x < TomcatManager
   TIMEOUT = 30 # apache's default timeout is 300
   OPENOFFICE_PORT = 8100
 
-
   def initialize
     super
-    @waiting = 0
+
     @waiting_threads = []
+
+    @log.debug("Initialized jodconvert_3_x...")
   end
 
   def busy?
@@ -53,7 +54,7 @@ class JODConvert_3_x < TomcatManager
 
       @mutex.synchronize {@running = true}
 
-      @log.warn("handling thread:#{Thread.current.object_id} asking for \"#{action}\"...")
+      @log.warn("Handling thread:#{Thread.current.object_id} asking for \"#{action}\"...")
 
       begin
         case action
@@ -80,13 +81,13 @@ class JODConvert_3_x < TomcatManager
 
           @waiting_threads = []
 
-          @log.warn("state is \"#{@state}\", expected \"#{EXPECTED_STATE[action]}\", returning #{@state == EXPECTED_STATE[action]}...")
+          @log.warn("State is \"#{@state}\", expected \"#{EXPECTED_STATE[action]}\", returning #{@state == EXPECTED_STATE[action]}...")
 
           return @state == EXPECTED_STATE[action]
         }
       end
     else
-      @log.warn("thread:#{Thread.current.object_id} entering wait for \"#{action}\"...")
+      @log.warn("Thread:#{Thread.current.object_id} entering wait for \"#{action}\"...")
 
       @mutex.synchronize {
         @waiting_threads << Thread.current
@@ -95,7 +96,7 @@ class JODConvert_3_x < TomcatManager
       Thread.stop
 
       @mutex.synchronize {
-        @log.warn("thread:#{Thread.current.object_id} leaving wait, state is \"#{@state}\", expected \"#{EXPECTED_STATE[action]}\", returning #{@state == EXPECTED_STATE[action]}...")
+        @log.warn("Thread:#{Thread.current.object_id} leaving wait, state is \"#{@state}\", expected \"#{EXPECTED_STATE[action]}\", returning #{@state == EXPECTED_STATE[action]}...")
         return @state == EXPECTED_STATE[action]
       }
     end
@@ -125,15 +126,6 @@ class JODConvert_3_x < TomcatManager
     return pid
   end
 
-  def process_office_file(file_name, file_mime_type, out_format, out_suffix)
-
-    response_body = handle_jodconvert_3_x_req(UploadIO.new(file_name, file_mime_type), out_format, out_suffix)
-
-    @log.debug(" => Called JODConvert 3.x OOo web service to convert #{file_name} to #{out_format}...")
-
-    return response_body
-  end
-
   def process_document_text(stream, in_mime_type, in_suffix , out_format, out_suffix)
 
     file_name = "/tmp/#{Guid.new.to_s}.#{in_suffix}"
@@ -151,30 +143,32 @@ class JODConvert_3_x < TomcatManager
     return response_body
   end
 
-  # Get the links from the MS Office or OpenOffice document
-  def handle_jodconvert_3_x_req(upload_io, out_format, out_suffix)
-
-    #TODO: verify tomcat isn't cacheing prior conversions.
-
-    url = URI.parse("#{PROTOCOL}://#{HOSTNAME}:#{PORT}#{WEBAPP_PATH}/converted/document.#{out_suffix}")
-
-    start = Time.now if (@log.level == Logger::DEBUG)
+  def process_office_file(file_name, file_mime_type, out_format, out_suffix)
 
     retries = MAX_RETRIES
 
     begin
 
+      url = URI.parse("#{PROTOCOL}://#{HOSTNAME}:#{PORT}#{WEBAPP_PATH}/converted/document.#{out_suffix}")
+
+      upload_io = UploadIO.new(file_name, file_mime_type)
+
       request = Net::HTTP::Post::Multipart.new(url.path, {"inputDocument"=>upload_io, "outputFormat"=>out_format})
+
+      start = 0
 
       begin
         response = Net::HTTP.start(url.host, url.port) do |http|
           http.read_timeout = TIMEOUT
           http.open_timeout = TIMEOUT
+
+          start = Time.now if (@log.level == Logger::DEBUG)
+
+          @log.debug("Making  JODConvert 3_x service request to convert #{file_name} to #{out_format}...")
           response = http.request(request)
         end
 
         if (response.class != Net::HTTPOK)
-          @log.debug("Service responsed with #{response.class}; #{response.code}; #{response.message}; #{response.body}; Tomcat needs to be restart.")
           raise TomcatNeedsToBeStarted.new("Service responsed with #{response.class}; #{response.code}; #{response.message}; #{response.body}; Tomcat needs to be restart.")
         elsif (response.body =~ /javax.servlet.ServletException/)
           if (response.body =~ /no office manager available/)
@@ -199,12 +193,12 @@ class JODConvert_3_x < TomcatManager
       
     rescue TomcatNeedsToBeStarted, NoOfficeManagerAvailable => e
 
-      @log.info("#{e.class}: #{e.message}; attempting to restart Tomcat.")
+      @log.info("#{e.class}: #{e.message}; attempting to restart Tomcat...")
 
       restart_retries = MAX_RETRIES
       until (restart_retries -= 1) == 0
         if ask_for(:restart)
-          @log.debug("appears to be running, attempting a retry")
+          @log.debug("Appears to be running, attempting a retry...")
           retry
         end
       end
@@ -254,8 +248,6 @@ class JODConvert_3_x < TomcatManager
     return false
   end
 
-
-
   private
 
   def restart
@@ -268,11 +260,6 @@ class JODConvert_3_x < TomcatManager
     else
       false
     end
-    # todo: remove rescue
-  rescue exception => e
-    @log.error("#{e.class}: #{e.message}")
-    @log.error("#{e.backtrace.join("\n")}")
-    raise e
   end
   
   def start_webapp
@@ -348,6 +335,7 @@ class JODConvert_3_x < TomcatManager
         return true
       end
     rescue Exception => e
+      # swallow
     end
 
     @mutex.synchronize {
@@ -396,6 +384,7 @@ class JODConvert_3_x < TomcatManager
     begin
       super
     rescue TomcatAlreadyRunning => e
+      # could swallow, but nice to know what happened
       @log.debug(e.message)
     end
 
@@ -403,7 +392,7 @@ class JODConvert_3_x < TomcatManager
 
     # then, if needed start the webapp
     if (!webapp_listening?)
-      return start_webapp
+     return start_webapp
     else
       # otherwise it is listening, update the state and increment restart_count
       @mutex.synchronize {
@@ -414,26 +403,4 @@ class JODConvert_3_x < TomcatManager
       return true
     end
   end
-
 end
-
-#
-#threads = []
-#
-#5.times { |i|
-#  threads << Thread.new(i) {
-#    puts "#{Thread.current.object_id} : started thread #{i}"
-#    manager = JODCovert_3_x.instance
-#    loop do
-#      seconds = rand(60)
-#      puts "#{Thread.current.object_id} : Sleeping for #{seconds}-seconds..."
-#      sleep seconds
-#      manager.restart
-#    end
-#  }
-#}
-#
-#threads.each {|t| t.join }
-
-#manager = JODCovert_3_x.instance
-#puts("#{manager.listening?}")

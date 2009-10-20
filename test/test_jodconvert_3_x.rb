@@ -246,7 +246,7 @@ class TestJODConvert_3_x < Test::Unit::TestCase
     raise TomcatCannotBeStarted.new('Restart timed out; Tomcat cannot be restarted.')
   end
 
-  def test_shutdown_webapp_then_handle_jodconvert_3_x_req
+  def test_shutdown_webapp_then_handle_process_office_file
 
     # generate a temp file
 
@@ -258,14 +258,14 @@ class TestJODConvert_3_x < Test::Unit::TestCase
 
     manager = JODConvert_3_x.instance
     value = nil
-    value = manager.handle_jodconvert_3_x_req(UploadIO.new(file_name, 'text/plain'), 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'docx') if manager.ask_for(:shutdown)
+    value = manager.process_office_file(file_name, 'text/plain', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'docx') if manager.ask_for(:shutdown)
 
     File.delete(file_name)
 
     assert(value, !nil)
   end
 
-  def test_threaded_random_shutdown_webapp_while_looping_through_5000_handle_jodconvert_3_x_req
+  def test_threaded_random_shutdown_webapp_while_looping_through_5000_handle_process_office_file
 
     # generate a temp file
 
@@ -290,7 +290,7 @@ class TestJODConvert_3_x < Test::Unit::TestCase
     while (number_of_times > 0)
       @log.debug("request: #{number_of_times}")
       number_of_times -= 1
-      value = value && !@manager.handle_jodconvert_3_x_req(UploadIO.new(file_name, 'text/plain'), 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'docx').nil?
+      value = value && !@manager.process_office_file(file_name, 'text/plain', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'docx').nil?
     end
 
     File.delete(file_name)
@@ -298,7 +298,7 @@ class TestJODConvert_3_x < Test::Unit::TestCase
     assert(value, true)
   end
 
-  def test_threaded_random_up_shutdown_tomcat_while_in_a_single_thread_looping_through_5000_handle_jodconvert_3_x_req
+  def test_threaded_random_up_shutdown_tomcat_while_in_a_single_thread_looping_through_5000_process_office_file
 
     # generate a temp file
 
@@ -327,7 +327,7 @@ class TestJODConvert_3_x < Test::Unit::TestCase
     while (number_of_times > 0)
       @log.debug("request: #{number_of_times}")
       number_of_times -= 1
-      value = value && !@manager.handle_jodconvert_3_x_req(UploadIO.new(file_name, 'text/plain'), 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'docx').nil?
+      value = value && !@manager.process_office_file(file_name, 'text/plain', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'docx').nil?
     end
 
     File.delete(file_name)
@@ -335,7 +335,7 @@ class TestJODConvert_3_x < Test::Unit::TestCase
     assert(value, true)
   end
 
-  def test_threaded_random_shutdown_of_tomcat_while_10_threads_convert_5000_through_handle_jodconvert_3_x_req
+  def test_threaded_random_shutdown_of_tomcat_while_10_threads_convert_5000_through_process_office_file
 
     # generate a temp file
     file_name = "/tmp/#{Guid.new.to_s}.txt"
@@ -370,7 +370,7 @@ class TestJODConvert_3_x < Test::Unit::TestCase
 
           mutex.synchronize {number_of_times -= 1}
           
-          tmp_value = mutex.synchronize {value} && !manager.handle_jodconvert_3_x_req(UploadIO.new(file_name, 'text/plain'), 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'docx').nil?
+          tmp_value = mutex.synchronize {value} && !manager.process_office_file(file_name, 'text/plain', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'docx').nil?
           mutex.synchronize {value = tmp_value}
 
           sleep rand(15)
@@ -393,7 +393,7 @@ class TestJODConvert_3_x < Test::Unit::TestCase
     assert(value, true)
   end
 
-  def test_threaded_random_of_stop_webapp_while_10_threads_convert_5000_through_handle_jodconvert_3_x_req
+  def test_threaded_random_of_stop_webapp_while_10_threads_convert_5000_through_process_office_file
 
     # generate a temp file
     file_name = "/tmp/#{Guid.new.to_s}.txt"
@@ -428,7 +428,7 @@ class TestJODConvert_3_x < Test::Unit::TestCase
 
           mutex.synchronize {number_of_times -= 1}
 
-          tmp_value = mutex.synchronize {value} && !manager.handle_jodconvert_3_x_req(UploadIO.new(file_name, 'text/plain'), 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'docx').nil?
+          tmp_value = mutex.synchronize {value} && !manager.process_office_file(file_name, 'text/plain', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'docx').nil?
           mutex.synchronize {value = tmp_value}
 
           sleep rand(15)
@@ -452,7 +452,7 @@ class TestJODConvert_3_x < Test::Unit::TestCase
   end
 
 
-  def test_threaded_random_kill_openoffice_while_10_threads_convert_5000_through_handle_jodconvert_3_x_req
+  def test_threaded_random_kill_openoffice_while_10_threads_convert_5000_through_process_office_file
 
     # generate a temp file
     file_name = "/tmp/#{Guid.new.to_s}.txt"
@@ -492,7 +492,7 @@ class TestJODConvert_3_x < Test::Unit::TestCase
 
           mutex.synchronize {number_of_times -= 1}
 
-          tmp_value = mutex.synchronize {value} && !manager.handle_jodconvert_3_x_req(UploadIO.new(file_name, 'text/plain'), 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'docx').nil?
+          tmp_value = mutex.synchronize {value} && !manager.process_office_file(file_name, 'text/plain', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'docx').nil?
           mutex.synchronize {value = tmp_value}
 
           sleep rand(15)
@@ -515,7 +515,7 @@ class TestJODConvert_3_x < Test::Unit::TestCase
     assert(value, true)
   end
 
-  def test_threaded_random_of_stop_webapp_while_10_threads_convert_5000_through_handle_jodconvert_3_x_req
+  def test_threaded_random_of_stop_webapp_while_10_threads_convert_5000_through_process_office_file
 
     # generate a temp file
     file_name = "/tmp/#{Guid.new.to_s}.txt"
@@ -550,7 +550,7 @@ class TestJODConvert_3_x < Test::Unit::TestCase
 
           mutex.synchronize {number_of_times -= 1}
 
-          tmp_value = mutex.synchronize {value} && !manager.handle_jodconvert_3_x_req(UploadIO.new(file_name, 'text/plain'), 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'docx').nil?
+          tmp_value = mutex.synchronize {value} && !manager.process_office_file(file_name, 'text/plain', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'docx').nil?
           mutex.synchronize {value = tmp_value}
 
           sleep rand(15)

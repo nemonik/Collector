@@ -9,11 +9,7 @@
 # License::
 
 class WebappCannotBeStarted < RuntimeError
-  def initialize(message)
-    if message == nil
-      super("Webapp cannot be started.")
-    else
-      super(message)
-    end
+  def initialize(message = "Webapp cannot be started.")
+    super(message)
   end
 end

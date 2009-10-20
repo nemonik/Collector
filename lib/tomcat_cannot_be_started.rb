@@ -9,11 +9,7 @@
 # License::
 
 class TomcatCannotBeStarted < RuntimeError
-  def initialize(message)
-    if message == nil
-      super("Tomcat cannot be started.")
-    else
+  def initialize(message = "Tomcat cannot be started.")
       super(message)
-    end
   end
 end

@@ -10,11 +10,7 @@
 # License::
 
 class NoOfficeManagerAvailable < RuntimeError
-  def initialize(message)
-    if message == nil
-      super("No Office Manager is available.")
-    else
-      super(message)
-    end
+  def initialize(message = "No Office Manager is available.")
+    super(message)
   end
 end

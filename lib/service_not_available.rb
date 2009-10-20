@@ -9,11 +9,7 @@
 # License::
 
 class ServiceNotAvailable < RuntimeError
-  def initialize(message)
-    if message == nil
-      super("Service is not available.")
-    else
-      super(message)
-    end
+  def initialize(message = "Service is not available.")
+    super(message)
   end
 end

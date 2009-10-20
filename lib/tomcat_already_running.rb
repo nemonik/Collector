@@ -9,11 +9,7 @@
 # License::
 
 class TomcatAlreadyRunning < RuntimeError
-  def initialize(message)
-    if message == nil
-      super("Tomcat is already running.")
-    else
-      super(message)
-    end
+  def initialize(message = "Tomcat is already running.")
+    super(message)
   end
 end
