@@ -126,7 +126,7 @@ class PostfixUrlDaemon
       def record_error(e)
         if ((!@message_id.nil?) && (!@message_id.empty?))
           begin
-            log(:error, "\"#{e.message}\" for message #{@message_id}\n#{e.backtrace}")
+            log(:error, "#{e.class} : '#{e.message} for message '#{@message_id}'\n#{e.backtrace.join("\n")}")
 
             @message_id = @message_id.gsub('<', '').gsub('>','')
             folder_name = File.join($options.tmp_folder_for_attachments, 'bad-msg', @message_id)
@@ -147,7 +147,7 @@ class PostfixUrlDaemon
             exception_file.close unless exception_file.nil?
           end
         else
-          log(:error, "#{e.message}\n#{e.backtrace}")
+          log(:error, "#{e.message}\n#{e.backtrace.join("\n")}")
         end
       end
 
@@ -325,14 +325,16 @@ class PostfixUrlDaemon
         elsif (info[1].include?('openoffice'))
           html = @manager.process_office_file(file_name, info[0], 'text/html', 'html')
 
-          log(:debug, " => service returned : #{html}")
+          log(:debug, " => service returned : #{html}") if $options.verbose
 
           get_links(html) if html
 
         else
-          log(:error, " => Unhandled file type of \"#{info}\"")
+          raise UnsupportedDocumentType.new("Unhandled file type of '#{info}'.")
         end
 
+      rescue Exception => e
+        record_error(e)
       end
 
       # Process the compressed file using a particular compression
@@ -357,7 +359,7 @@ class PostfixUrlDaemon
           FileUtils.rm(file_name)
 
         else
-          log(:error, " => #{compression} unhandled form of compression")
+          raise UnhandledFormOfCompression.new("'#{compression}' unhandled form of compression.")
         end
 
         # process contents, drilling into sub-folders if they exist
@@ -367,6 +369,8 @@ class PostfixUrlDaemon
             process_file(contents)
           end
         }
+      rescue Exception => e
+        record_error(e)
       end
 
       # Determine the mimetype of the file
@@ -475,6 +479,8 @@ class PostfixUrlDaemon
             log(:info, "Not publishing  #{@links.size} links to AMQP server :: #{@links}...")
           end
         end
+      rescue Exception => e
+        record_error(e)
       end
 
       # Select the method to parse out links
@@ -512,9 +518,7 @@ class PostfixUrlDaemon
           log(:debug, ' => text is empty')
         end
       rescue Exception => e
-        log(:error, " => had a problem pulling URL from text, #{e.message}, x-count #{@x_count}")
-        log(:error, " => -------------------------------------------------------------------------------\n => #{text}\n => -------------------------------------------------------------------------------")
-        raise e
+        record_error(e)
       end
 
       # Get the links from the text using the Hpricot XML/HTML parser
@@ -551,6 +555,8 @@ class PostfixUrlDaemon
 
           @links = @links + tmp_links
         end
+      rescue Exception => e
+        record_error(e)
       end
 
       # Get the links from the text using the Nokogiri XML/HTML parser
@@ -581,6 +587,8 @@ class PostfixUrlDaemon
 
           @links = @links + tmp_links
         end
+      rescue Exception => e
+        record_error(e)
       end
     end # Worker
 
@@ -751,7 +759,7 @@ class PostfixUrlDaemon
       
       Thread.start(server.accept) do |socket|
 
-        begin 
+        begin
           mutex.synchronize { connections += 1 }
 
           @log.debug "Handling connection from #{socket.peeraddr[2]}:#{socket.peeraddr[1]}..."
@@ -848,7 +856,7 @@ class PostfixUrlDaemon
             mutex.synchronize { connections -= 1 }
           end
         rescue Errno::EPIPE => e
-          @log.error("#{e.class} : #{e.msg}");
+          @log.error("#{e.class} : #{e.msg}")
         end
       end
     end

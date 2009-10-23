@@ -22,6 +22,7 @@ require 'service_not_available'
 require 'no_office_manager_available'
 require 'tomcat_needs_to_be_started'
 require 'tomcat_cannot_be_started'
+require 'tomcat_likely_restarting'
 require 'webapp_cannot_be_started'
 
 class JODConvert_3_x < TomcatManager
@@ -92,8 +93,12 @@ class JODConvert_3_x < TomcatManager
       @mutex.synchronize {
         @waiting_threads << Thread.current
       }
-      
-      Thread.stop
+
+      begin
+        Thread.stop
+      rescue Exception
+        retry
+      end
 
       @mutex.synchronize {
         @log.warn("Thread:#{Thread.current.object_id} leaving wait, state is \"#{@state}\", expected \"#{EXPECTED_STATE[action]}\", returning #{@state == EXPECTED_STATE[action]}...")
@@ -145,7 +150,7 @@ class JODConvert_3_x < TomcatManager
 
   def process_office_file(file_name, file_mime_type, out_format, out_suffix)
 
-    retries = MAX_RETRIES
+    body = ''
 
     begin
 
@@ -168,6 +173,7 @@ class JODConvert_3_x < TomcatManager
           response = http.request(request)
         end
 
+
         if (response.class != Net::HTTPOK)
           raise TomcatNeedsToBeStarted.new("Service responsed with #{response.class}; #{response.code}; #{response.message}; #{response.body}; Tomcat needs to be restart.")
         elsif (response.body =~ /javax.servlet.ServletException/)
@@ -176,29 +182,27 @@ class JODConvert_3_x < TomcatManager
           elsif (response.body =~ /conversion failed/)
             raise ConversionError.new("Jodconvert 3.x OOo web service failed to convert #{file_name} of #{file_mime_type}")
           end
-        end
-
-      rescue Exception => e
-
-        if (retries -= 1) == 0
-          @log.info(" => #{e.class}: #{e.message}; making another attempt...")
-          sleep 5
-          @log.debug(" => Retrying Jodconvert 3.x OOo web service; #{retries} retries remain")
-
-          retry
         else
-          raise TomcatNeedsToBeStarted.new("#{e.message}; made #{MAX_RETRIES} attempts; Tomcat needs a forced restart")
+          body = response.body
         end
+
+      rescue  TomcatNeedsToBeStarted, NoOfficeManagerAvailable, ConversionError => e
+        raise e
+
+      rescue Exception => e #EOFError, Errno::ECONNREFUSED, Errno::ENOENT, Timeout::Error => e
+
+        raise TomcatLikelyRestarting.new("#{e.class} : #{e.message}; Tomcat is likely restarting...")
+
       end
       
     rescue TomcatNeedsToBeStarted, NoOfficeManagerAvailable => e
 
-      @log.info("#{e.class}: #{e.message}; attempting to restart Tomcat...")
+      @log.warn("#{e.class} : #{e.message}; attempting to restart Tomcat...")
 
       restart_retries = MAX_RETRIES
       until (restart_retries -= 1) == 0
         if ask_for(:restart)
-          @log.debug("Appears to be running, attempting a retry...")
+          @log.warn("Jodconvert 3.x OOo web service appears to be running, attempting a retry...")
           retry
         end
       end
@@ -212,10 +216,7 @@ class JODConvert_3_x < TomcatManager
       @log.debug(" => Jodconvert 3.x OOo web service handled the request in #{stop-start} seconds.")
     end
 
-    return response.body
-
-  rescue Timeout::Error
-    raise TomcatCannotBeStarted.new('Restart timed out; Tomcat cannot be restarted.')
+    return body
   end
 
   def running?
@@ -269,7 +270,18 @@ class JODConvert_3_x < TomcatManager
         @state = WEBAPP_STARTING
       }
 
-      req = Net::HTTP::Get.new("/manager/html/start?path=#{WEBAPP_PATH}")
+      header = {
+        'User-Agent' => 'Mozilla/5.0 (X11; U; Linux x86_64; en-US; rv:1.9.1.3) Gecko/20090909 Fedora/3.5.3-1.fc11 Firefox/3.5.3',
+        'Accept' => 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language' => 'en-us,en;q=0.5',
+        'Accept-Encoding' => 'gzip,deflate',
+        'Accept-Charset' => 'ISO-8859-1,utf-8;q=0.7,*;q=0.7',
+        'Keep-Alive' => '600',
+        'Connection' => 'keep-alive',
+        'Referer' => 'http://localhost:8080/manager/html'
+      }
+
+      req = Net::HTTP::Get.new("/manager/html/start?path=#{WEBAPP_PATH}", header)
       req.basic_auth(TOMCAT_MANAGER_USER, TOMCAT_MANAGER_PASSWORD)
 
       response = Net::HTTP.start(HOSTNAME, PORT) {|http|
