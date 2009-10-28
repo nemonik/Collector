@@ -69,6 +69,7 @@ class TomcatManager
       end
 
     rescue Exception => e
+      @log.warn("#{e.class} : #{e.message}") #TODO: remove
     end
 
     @log.debug('Tomcat manager is not listening.');
@@ -147,19 +148,34 @@ class TomcatManager
 
     retries = 0
 
+    @log.debug("MAX_RETRIES = #{MAX_RETRIES}")
+
     until (retries +=1) == MAX_RETRIES
+
+      @log.debug("attempt #{retries} to determine of the manager is listening")
 
       if (manager_listening?)
         @mutex.synchronize {
           @state = TOMCAT_RUNNING
         }
+
+        @log.debug("returning true that manager is listing...")
         return true
+      else
+        @log.debug("manager_listening? returned false")
       end
 
       sleep 5
     end
 
+    @log.debug("throwing tomcat cannot be started...")
+
     throw TomcatCannotBeStarted.new("#{retries} attempts were made to restart Tomcat")
+  rescue Exception => e
+
+    @log.debug("an exception got thrown; #{e.class} : #{e.message} ; #{e.backtrace.join("\n")}")
+
+    raise e
   end
 
   def shutdown

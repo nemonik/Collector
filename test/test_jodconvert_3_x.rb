@@ -13,25 +13,275 @@ $LOAD_PATH << File.expand_path('../lib')  # hack for now, to pick up my Compress
 require "test/unit"
 require 'jodconvert_3_x'
 require 'tomcat_cannot_be_started'
+require 'tomcat_already_running'
 require 'conversion_error'
 require 'logger'
 require 'lorem'
 require 'thread'
 require 'term/ansicolor'
+require 'uri'
+require 'net/http'
+require 'stringio'
+require 'open-uri'
+require 'guid'
+require 'mime/types'
+require 'rmail'
+require 'net/smtp'
+require 'fileutils'
+require 'compression'
+require 'mime'
+require 'utility'
 
 class TestJODConvert_3_x < Test::Unit::TestCase
-  include Term::ANSIColor
+  include Term::ANSIColor, Utility, Compression, Mime
+
+  attr_accessor :urls_filename
+  attr_accessor :samples_folder
+  attr_accessor :ignore
+  attr_accessor :search_terms
+  attr_accessor :search_term_iterator
+  attr_accessor :urls
+  attr_accessor :url_iterator
+  attr_accessor :doc_types
 
   def setup
-    @manager = JODConvert_3_x.instance
 
     @log = Logger.new(STDOUT)
     @log.level = Logger::DEBUG #DEBUG INFO ERROR
     @log.datetime_format = "%H:%M:%S"
+
+    @urls_filename = File.expand_path('~/urls.txt')
+    @samples_folder = File.expand_path('~/samples')
+
+    @ignore = ['en.wikipedia.org', 'www.answers.com']
+    @msg_count = 0
+
+    @search_terms = []
+    @search_term_iterator = 0
+
+    @urls = []
+    @url_iterator = 0
+
+    # read URLs from file if the file exists; otherwise, generate URLs using
+    # 2000 seed words
+    initialize_urls(true, 2000)
+
+    # generate 500 docs from the URLs containing up 20 paragraphs each containg up 5 urls
+    #generate_docs(500, 20, 5)
+
+    @manager = JODConvert_3_x.instance
+
+    begin
+      @log.debug("asking for tomcat to start")
+      @manager.ask_for(:start);
+    rescue TomcatAlreadyRunning
+      @log.debug("Tomcat already running.")
+    end
+
+    @log.debug("initialized...")
   end
 
   def teardown
    
+  end
+
+  def generate_docs(document_count = 100, max_paragraph_count = 20, max_url_count = 5)
+
+    FileUtils.rm_f @samples_folder if File.exists?(@samples_folder)
+
+    @log.debug("creating #{document_count} document(s)...")
+
+    (0..document_count).each {|i|
+      generate_random_type_document(@samples_folder, max_paragraph_count, max_url_count)
+      @log.debug("generated #{i}/#{document_count}")
+    }
+
+  end
+
+  def send_msg(from, to, filepaths, compress = false, max_paragraph_count = 20, max_url_count = 5, chance_of_attachment = 90)
+    subject = "Sending "
+
+    message = RMail::Message::new
+    message.header['From'] = "<#{from}>"
+    message.header['To'] = "<#{to}>"
+    message.header['Date'] = Time::new.rfc2822
+    @log.debug("Created message object...")
+
+    text_part = RMail::Message::new
+    text_part.header['Content-Type'] = 'TEXT/PLAIN; format=flowed; charset=utf-8'
+    text_part.body = generate_text('text/plain', max_paragraph_count, max_url_count)
+    @log.debug("Created text part...")
+
+    html_part = RMail::Message::new
+    html_part.header['Content-Type'] = 'text/html, charset=utf-8'
+    html_part.body = generate_text('text/html', max_paragraph_count, max_url_count)
+    @log.debug("Created html part...")
+
+    attachments = Array.new
+    dst = File.join('/tmp', Guid.new.to_s)
+
+    if ((compress) && (filepaths.size > 0) && (rand() > (1 - chance_of_attachment * 0.01)))
+
+      Dir.mkdir(dst)
+
+      tmp_filepaths = Array.new
+
+      filepaths.each { |filepath|
+        FileUtils.cp(filepath, dst)
+        tmp_filepaths.push(File.join(dst, File.basename(filepath)))
+      }
+
+      if (filepaths.size > 1)
+        if (rand() > 0.50)
+          dst = File.join(dst, 'archive.zip')
+          zip(dst, tmp_filepaths)
+        else
+          dst = File.join(dst, 'archive.tar')
+          tar(dst, tmp_filepaths)
+
+          if (rand() > 0.5)
+            gzip([dst])
+            dst += '.gz'
+          else
+            bzip2([dst])
+            dst += '.bz2'
+          end
+        end
+      else
+        if ((r = rand()) > 0.66)
+          gzip(tmp_filepaths)
+          dst = tmp_filepaths[0] + '.gz'
+        elsif (r > 0.33)
+          dst = tmp_filepaths[0] + '.zip'
+          zip(dst, tmp_filepaths)
+        elsif (r > 0.0)
+          bzip2(tmp_filepaths)
+          dst = tmp_filepaths[0] + '.bz2'
+        end
+      end
+
+      attachment_part = RMail::Message::new
+
+      mime_type = MIME::Types.of(dst).first
+      content_type = (mime_type ? mime_type.content_type : 'application/binary')
+      filename = File.basename(dst)
+
+      @log.debug("Creating attachment part for #{dst}")
+
+      subject = "#{filename} containing #{filepaths}"
+
+      attachment_part.header['Content-Type'] = "#{content_type}; name=#{filename}"
+      attachment_part.header['Content-Transfer-Encoding'] = 'BASE64'
+      attachment_part.header['Content-Disposition:'] = "attachment; filename=#{filename}"
+      attachment_part.body = [File.open(dst).read].pack('m')
+
+      attachments.push(attachment_part)
+
+      FileUtils.rm_rf(File.dirname(dst))
+
+    else
+      filepaths.each {|filepath|
+        if File.file? filepath # ignore '.', and '..'
+          attachment_part = RMail::Message::new
+
+          mime_type = MIME::Types.of(filepath).first
+          content_type = (mime_type ? mime_type.content_type : 'application/binary')
+          filename = File.split(filepath)[1]
+
+          if (attachments.empty?)
+            subject += "#{filename}"
+          else
+            subject += ", #{filename}"
+          end
+
+          attachment_part.header['Content-Type'] = "#{content_type}; name=#{filename}"
+          attachment_part.header['Content-Transfer-Encoding'] = 'BASE64'
+          attachment_part.header['Content-Disposition:'] = "attachment; filename=#{filename}"
+          attachment_part.body = [File.open(filepath).read].pack('m')
+
+          attachments.push(attachment_part)
+
+          @log.debug("Created attachment part for #{filename}")
+        else
+          @log.debug("Skipping #{filepath}")
+        end
+      }
+    end
+
+    if (!attachments.empty?)
+      message.header['Subject'] = subject
+      message.header['X-Number-of-Attachments'] = attachments.size.to_s
+    else
+      message.header['Subject'] = subject + "no attachments"
+    end
+
+    message.add_part(text_part)
+    message.add_part(html_part)
+
+    attachments.each {|attachment|
+      message.add_part(attachment)
+    }
+
+    smtp = Net::SMTP.start("localhost.localdomain", 25)
+    @msg_count += 1
+    message.header['X-Count'] = "#{@msg_count}"
+
+    smtp.send_message message.to_s, from, to
+    smtp.finish
+
+    @log.debug("Sent message #{@msg_count}...")
+
+    return true
+  rescue Exception => e
+    @log.error("#{e.class} : #{e.message}\n#{e.backtrace.join("\n")}")
+    return false
+  end
+
+
+  def send_all(from, to, path, sleep_sec = 0, attach_max = 1, compress = false, max_paragraph_count = 20, max_url_count = 5, chance_of_attachment = 90)
+
+    value = true
+    filepaths = Array.new
+    attach_count = rand(attach_max)
+
+    at = 0
+    entries = Dir.entries(path)
+    entries.each { |filename|
+
+      at +=1
+
+      filepath = File.join(path, filename)
+
+      if File.file? filepath
+
+        if (filepaths.size < attach_count)
+          filepaths.push(filepath)
+        end
+
+        if ((filepaths.size == attach_count) || (at == entries.size))
+          @log.debug("sending #{filepaths}")
+          @log.debug("===========================")
+
+          value = value && send_msg(from, to, filepaths, compress, max_paragraph_count, max_url_count, chance_of_attachment)
+
+          if (sleep_sec == -1)
+            random_sleep_sec = rand()
+            @log.debug("sleeping #{random_sleep_sec} seconds...")
+            sleep(random_sleep_sec)
+          else
+            @log.debug("sleeping #{sleep_sec} seconds...")
+            sleep(sleep_sec)
+          end
+          @log.debug("===========================")
+
+          filepaths = Array.new
+        end
+      else
+        @log.debug("not sending #{filepath}")
+      end
+    }
+
+    return value
   end
 
   def test_tomcat_running
@@ -248,134 +498,103 @@ class TestJODConvert_3_x < Test::Unit::TestCase
 
   def test_shutdown_webapp_then_handle_process_office_file
 
-    # generate a temp file
+    info = []
+    file_name = ''
+    value = false
 
-    file_name = "/tmp/#{Guid.new.to_s}.txt"
+    # get a random office file from samples...
+    until (value)
+      file_name = File.join(@samples_folder, Dir.entries(@samples_folder)[rand(Dir.entries(@samples_folder).size)])
 
-    File.open(file_name, 'w') {|f|
-      f.write(Lorem::Base.new('paragraphs', 10).output)
-    }
+      info = mime_shared_info(file_name)
+
+      value = info[1].include?('openoffice') && !(info[1].include?('openoffice.org-impress'))
+    end
 
     manager = JODConvert_3_x.instance
-    value = nil
-    value = manager.process_office_file(file_name, 'text/plain', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'docx') if manager.ask_for(:shutdown)
+    value = value && !manager.process_office_file(file_name, info[0], 'text/html', 'html').nil?
 
-    File.delete(file_name)
-
-    assert(value, !nil)
-  end
-
-  def test_threaded_random_shutdown_webapp_while_looping_through_5000_handle_process_office_file
-
-    # generate a temp file
-
-    file_name = "/tmp/#{Guid.new.to_s}.txt"
-
-    File.open(file_name, 'w') {|f|
-      f.write(Lorem::Base.new('paragraphs', 10).output)
-    }
-
-    number_of_times = 5000;
-
-    Thread.new() {
-      shutdown_thread_manager = JODConvert_3_x.instance
-
-      while number_of_times > 0
-        shutdown_thread_manager.ask_for(:stop_webapp)
-        sleep 15
-      end
-    }
-
-    value = true 
-    while (number_of_times > 0)
-      @log.debug("request: #{number_of_times}")
-      number_of_times -= 1
-      value = value && !@manager.process_office_file(file_name, 'text/plain', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'docx').nil?
-    end
-
-    File.delete(file_name)
-
+  rescue Exception => e
+    @log.error("#{e.class} : #{e.message}\n#{e.backtrace.join("\n")}")
+  ensure
     assert(value, true)
   end
 
-  def test_threaded_random_up_shutdown_tomcat_while_in_a_single_thread_looping_through_5000_process_office_file
 
-    # generate a temp file
-
-    file_name = "/tmp/#{Guid.new.to_s}.txt"
-
-    File.open(file_name, 'w') {|f|
-      f.write(Lorem::Base.new('paragraphs', 10).output)
-    }
+  def test_threaded_random_kill_of_tomcat_while_threads_convert_5000_through_process_office_file
 
     number_of_times = 5000;
+    mutex = Mutex.new
+    value = true
+    threads = []
 
-    Thread.new() {
-      shutdown_thread_manager = JODConvert_3_x.instance
-
-      @log.debug("Started shutdown thread...")
+    Thread.new() do
       
-      while number_of_times > 0
-        shutdown_thread_manager.ask_for(:shutdown)
-        sleep 15
-      end
-    }
-
-    shutdown_thread.join
-
-    value = true
-    while (number_of_times > 0)
-      @log.debug("request: #{number_of_times}")
-      number_of_times -= 1
-      value = value && !@manager.process_office_file(file_name, 'text/plain', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'docx').nil?
-    end
-
-    File.delete(file_name)
-
-    assert(value, true)
-  end
-
-  def test_threaded_random_shutdown_of_tomcat_while_10_threads_convert_5000_through_process_office_file
-
-    # generate a temp file
-    file_name = "/tmp/#{Guid.new.to_s}.txt"
-
-    File.open(file_name, 'w') {|f|
-      f.write(Lorem::Base.new('paragraphs', 10).output)
-    }
-
-    number_of_times = 5000;
-    mutex = Mutex.new
-
-    Thread.new() {
-      shutdown_thread_manager = JODConvert_3_x.instance
-
-      @log.debug("Started shutdown thread...")
+      @log.debug("Started kill thread...")
 
       while mutex.synchronize {number_of_times} > 0
         sleep rand(60)+30
-        @log.debug("Waking up, and asking for shutdown of Tomcat...".yellow)
-        shutdown_thread_manager.ask_for(:shutdown)
-      end
-    }
+        @log.debug("Waking up, and killing Tomcat...".yellow)
 
-    value = true
-    threads = []
+        pid = -1
+        
+        IO.popen("ps aux | grep org.apache.catalina.startup.Bootstrap") {|stdout|
+          out = stdout.read
+
+          out.split(/\n/).each { |line|
+
+            @log.debug("line = \"#{line}\"")
+
+            if line.include? 'java'
+              pid = line.split(" ")[1]
+              break
+            end
+          } 
+        }
+
+        IO.popen("kill -9 #{pid}") {|stdout|
+          stdout.read
+        }
+
+      end
+    end
 
     10.times {|i|
-      threads << Thread.new(i) {
+      threads << Thread.new(i) do
         manager = JODConvert_3_x.instance
         while (mutex.synchronize {number_of_times} > 0)
-          @log.debug("request: #{mutex.synchronize {number_of_times}}")
+          begin
 
-          mutex.synchronize {number_of_times -= 1}
-          
-          tmp_value = mutex.synchronize {value} && !manager.process_office_file(file_name, 'text/plain', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'docx').nil?
-          mutex.synchronize {value = tmp_value}
+            info = []
+            file_name = ''
+            value = false
 
-          sleep rand(15)
+            # get a random office file from samples...
+            until (value)
+              file_name = File.join(@samples_folder, Dir.entries(@samples_folder)[rand(Dir.entries(@samples_folder).size)])
+
+              info = mime_shared_info(file_name)
+
+              value = (info[1].include?('openoffice')) && !(info[1].include?('openoffice.org-impress'))
+            end
+
+            @log.debug("request: #{mutex.synchronize {number_of_times}} processing")
+
+            tmp_value = !manager.process_office_file(file_name, info[0], 'text/html', 'html').nil?
+
+            mutex.synchronize {
+              number_of_times -= 1
+              value = value && tmp_value
+            }
+
+            #sleep rand(15)
+            #sleep 5
+            sleep 0.5
+          rescue 
+            @log.error("#{e.class} : #{e.message}\n#{e.backtrace.join("\n")}")
+          end
         end
-      }
+      end
     }
 
     threads.each {|t| t.join }
@@ -388,116 +607,78 @@ class TestJODConvert_3_x < Test::Unit::TestCase
       }
     end
 
-    File.delete(file_name)
-
+  rescue Exception => e
+    @log.error("#{e.class} : #{e.message}\n#{e.backtrace.join("\n")}")
+  ensure
     assert(value, true)
   end
 
-  def test_threaded_random_of_stop_webapp_while_10_threads_convert_5000_through_process_office_file
-
-    # generate a temp file
-    file_name = "/tmp/#{Guid.new.to_s}.txt"
-
-    File.open(file_name, 'w') {|f|
-      f.write(Lorem::Base.new('paragraphs', 10).output)
-    }
+  def test_threaded_random_stop_of_webapp_while_threads_convert_5000_through_process_office_file
 
     number_of_times = 5000;
     mutex = Mutex.new
+    value = true
+    threads = []
 
     Thread.new() {
-      shutdown_thread_manager = JODConvert_3_x.instance
-
       @log.debug("Started stop webapp thread...")
 
       while mutex.synchronize {number_of_times} > 0
         sleep rand(60)+30
-        @log.debug("Waking up, and asking for stop of webapp...".yellow)
-        shutdown_thread_manager.ask_for(:stop_webapp)
-      end
-    }
+        begin
 
-    value = true
-    threads = []
+          @log.debug("Waking up, and asking for stop of webapp...".yellow)
 
-    10.times {|i|
-      threads << Thread.new(i) {
-        manager = JODConvert_3_x.instance
-        while (mutex.synchronize {number_of_times} > 0)
-          @log.debug("request: #{mutex.synchronize {number_of_times}}")
+          req = Net::HTTP::Get.new("/manager/html/stop?path=#{JODConvert_3_x::WEBAPP_PATH}")
+          req.basic_auth(JODConvert_3_x::TOMCAT_MANAGER_USER, JODConvert_3_x::TOMCAT_MANAGER_PASSWORD)
 
-          mutex.synchronize {number_of_times -= 1}
-
-          tmp_value = mutex.synchronize {value} && !manager.process_office_file(file_name, 'text/plain', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'docx').nil?
-          mutex.synchronize {value = tmp_value}
-
-          sleep rand(15)
-        end
-      }
-    }
-
-    threads.each {|t| t.join }
-
-    all_exit = false
-    until (all_exit == true)
-      all_exit = true
-      threads.size.times {|i|
-        all_exit = all_exit && (threads[i].status == false)
-      }
-    end
-
-    File.delete(file_name)
-
-    assert(value, true)
-  end
-
-
-  def test_threaded_random_kill_openoffice_while_10_threads_convert_5000_through_process_office_file
-
-    # generate a temp file
-    file_name = "/tmp/#{Guid.new.to_s}.txt"
-
-    File.open(file_name, 'w') {|f|
-      f.write(Lorem::Base.new('paragraphs', 10).output)
-    }
-
-    number_of_times = 5000;
-    mutex = Mutex.new
-
-    Thread.new() {
-      shutdown_thread_manager = JODConvert_3_x.instance
-
-      @log.debug("Started kill openoffice thread...")
-
-      while mutex.synchronize {number_of_times} > 0
-        sleep rand(60)+30
-
-        if ((pid = shutdown_thread_manager.get_openoffice_pid) != JODConvert_3_x::PID_DOESNT_EXIST)
-          @log.info('Shutting down OpenOffice...'.yellow)
-          IO.popen("kill -9 #{pid}") {|stdout|
-            stdout.read
+          Net::HTTP.start(JODConvert_3_x::HOSTNAME, JODConvert_3_x::PORT) {|http|
+            http.request(req)
           }
+        rescue Exception => e
+          # swallow
         end
       end
     }
 
-    value = true
-    threads = []
-
-    10.times {|i|
-      threads << Thread.new(i) {
+    20.times {|i|
+      threads << Thread.new(i) do
         manager = JODConvert_3_x.instance
         while (mutex.synchronize {number_of_times} > 0)
-          @log.debug("request: #{mutex.synchronize {number_of_times}}")
 
-          mutex.synchronize {number_of_times -= 1}
+          begin
+            info = []
+            file_name = ''
+            value = false
 
-          tmp_value = mutex.synchronize {value} && !manager.process_office_file(file_name, 'text/plain', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'docx').nil?
-          mutex.synchronize {value = tmp_value}
+            # get a random office file from samples...
+            until (value)
+              file_name = File.join(@samples_folder, Dir.entries(@samples_folder)[rand(Dir.entries(@samples_folder).size)])
 
-          sleep rand(15)
+              info = mime_shared_info(file_name)
+
+              value = (info[1].include?('openoffice')) && !(info[1].include?('openoffice.org-impress'))
+            end
+
+            @log.debug("request: #{mutex.synchronize {number_of_times}} processing")
+
+            tmp_value = !manager.process_office_file(file_name, info[0], 'text/html', 'html').nil?
+
+            mutex.synchronize {
+              number_of_times -= 1
+              value = value && tmp_value
+            }
+
+            #sleep rand(15)
+            #sleep 5
+            #sleep 0.5
+
+            # no sleep, hammer it as fast you can
+          rescue Exception => e
+            @log.error("#{e.class} : #{e.message}\n#{e.backtrace.join("\n")}")
+          end
         end
-      }
+      end
     }
 
     threads.each {|t| t.join }
@@ -510,70 +691,33 @@ class TestJODConvert_3_x < Test::Unit::TestCase
       }
     end
 
-    File.delete(file_name)
-
+  rescue Exception => e
+    @log.error("#{e.class} : #{e.message}\n#{e.backtrace.join("\n")}")
+  ensure
     assert(value, true)
   end
 
-  def test_threaded_random_of_stop_webapp_while_10_threads_convert_5000_through_process_office_file
-
-    # generate a temp file
-    file_name = "/tmp/#{Guid.new.to_s}.txt"
-
-    File.open(file_name, 'w') {|f|
-      f.write(Lorem::Base.new('paragraphs', 10).output)
-    }
-
-    number_of_times = 5000;
-    mutex = Mutex.new
-
-    Thread.new() {
-      shutdown_thread_manager = JODConvert_3_x.instance
-
-      @log.debug("Started stop webapp thread...")
-
-      while mutex.synchronize {number_of_times} > 0
-        sleep rand(60)+30
-        @log.debug("Waking up, and asking for stop of webapp...".yellow)
-        shutdown_thread_manager.ask_for(:stop_webapp)
-      end
-    }
+  def test_send_mail
 
     value = true
-    threads = []
+    from = 'walsh@localhost.localdomain'
+    to = 'walsh@localhost.localdomain'
+    sleep_sec = 0
+    attach_max = 1
+    compress = false
+    max_paragraph_count = 20
+    max_url_count = 5
+    chance_of_attachment = 90
+    count = 100
 
-    10.times {|i|
-      threads << Thread.new(i) {
-        manager = JODConvert_3_x.instance
-        while (mutex.synchronize {number_of_times} > 0)
-          @log.debug("request: #{mutex.synchronize {number_of_times}}")
-
-          mutex.synchronize {number_of_times -= 1}
-
-          tmp_value = mutex.synchronize {value} && !manager.process_office_file(file_name, 'text/plain', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'docx').nil?
-          mutex.synchronize {value = tmp_value}
-
-          sleep rand(15)
-        end
-      }
-    }
-
-    threads.each {|t| t.join }
-
-    all_exit = false
-    until (all_exit == true)
-      all_exit = true
-      threads.size.times {|i|
-        all_exit = all_exit && (threads[i].status == false)
-      }
+    1.upto(count) do |i|
+      @log.debug("starting interation #{i}")
+      value = value && send_all(from, to, @samples_folder, sleep_sec, attach_max, compress, max_paragraph_count, max_url_count, chance_of_attachment)
     end
 
-    File.delete(file_name)
-
+  rescue Exception => e
+    @log.error("#{e.class} : #{e.message}\n#{e.backtrace.join("\n")}")
+  ensure
     assert(value, true)
   end
 end
-
-
-
-

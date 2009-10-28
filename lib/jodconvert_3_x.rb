@@ -55,7 +55,7 @@ class JODConvert_3_x < TomcatManager
 
       @mutex.synchronize {@running = true}
 
-      @log.warn("Handling thread:#{Thread.current.object_id} asking for \"#{action}\"...")
+      @log.warn("Asking for \"#{action}\"...")
 
       begin
         case action
@@ -88,7 +88,7 @@ class JODConvert_3_x < TomcatManager
         }
       end
     else
-      @log.warn("Thread:#{Thread.current.object_id} entering wait for \"#{action}\"...")
+      @log.warn("Entering wait for \"#{action}\"...")
 
       @mutex.synchronize {
         @waiting_threads << Thread.current
@@ -101,7 +101,7 @@ class JODConvert_3_x < TomcatManager
       end
 
       @mutex.synchronize {
-        @log.warn("Thread:#{Thread.current.object_id} leaving wait, state is \"#{@state}\", expected \"#{EXPECTED_STATE[action]}\", returning #{@state == EXPECTED_STATE[action]}...")
+        @log.warn("Leaving wait, state is \"#{@state}\", expected \"#{EXPECTED_STATE[action]}\", returning #{@state == EXPECTED_STATE[action]}...")
         return @state == EXPECTED_STATE[action]
       }
     end
@@ -189,13 +189,13 @@ class JODConvert_3_x < TomcatManager
       rescue  TomcatNeedsToBeStarted, NoOfficeManagerAvailable, ConversionError => e
         raise e
 
-      rescue Exception => e #EOFError, Errno::ECONNREFUSED, Errno::ENOENT, Timeout::Error => e
+      rescue EOFError, Errno::ECONNREFUSED, Errno::ENOENT, Errno::EPIPE, Timeout::Error, Errno::ECONNRESET => e
 
         raise TomcatLikelyRestarting.new("#{e.class} : #{e.message}; Tomcat is likely restarting...")
 
       end
       
-    rescue TomcatNeedsToBeStarted, NoOfficeManagerAvailable => e
+    rescue TomcatNeedsToBeStarted, NoOfficeManagerAvailable, TomcatLikelyRestarting => e
 
       @log.warn("#{e.class} : #{e.message}; attempting to restart Tomcat...")
 
@@ -215,7 +215,7 @@ class JODConvert_3_x < TomcatManager
       stop = Time.now
       @log.debug(" => Jodconvert 3.x OOo web service handled the request in #{stop-start} seconds.")
     end
-
+   
     return body
   end
 

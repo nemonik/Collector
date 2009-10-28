@@ -36,6 +36,7 @@ require 'eventmachine'
 require 'term/ansicolor'
 require 'daemons/daemonize'
 require 'jodconvert_3_x'
+require 'mime'
 include Daemonize
 include Term::ANSIColor
 
@@ -47,7 +48,7 @@ class PostfixUrlDaemon
 
   class ThreadPool
     class Worker
-      include Compression
+      include Compression, Mime
 
       def initialize(log, name)
         @log = log
@@ -126,7 +127,7 @@ class PostfixUrlDaemon
       def record_error(e)
         if ((!@message_id.nil?) && (!@message_id.empty?))
           begin
-            log(:error, "#{e.class} : '#{e.message} for message '#{@message_id}'\n#{e.backtrace.join("\n")}")
+            log(:warn, "#{e.class} : '#{e.message} for message '#{@message_id}'\n#{e.backtrace.join("\n")}")
 
             @message_id = @message_id.gsub('<', '').gsub('>','')
             folder_name = File.join($options.tmp_folder_for_attachments, 'bad-msg', @message_id)
@@ -147,7 +148,7 @@ class PostfixUrlDaemon
             exception_file.close unless exception_file.nil?
           end
         else
-          log(:error, "#{e.message}\n#{e.backtrace.join("\n")}")
+          log(:warn, "#{e.class} : #{e.message}\n#{e.backtrace.join("\n")}")
         end
       end
 
@@ -226,13 +227,15 @@ class PostfixUrlDaemon
                 file.close
 
                 begin
-                  Timeout::timeout($options.timeout) {
+                  #Timeout::timeout($options.timeout) {
                     process_file(file_name)
-                  }
-                rescue Timeout::Error
-
-                  log(:info, ' => Processing of attachments has timed out.')
-
+                  #}
+                #rescue Timeout::Error
+#
+#                  log(:info, ' => Processing of attachments has timed out.')
+                rescue Exception => e
+             
+                  record_error(e)
                 ensure
                   FileUtils.rm_rf(folder_name) #unless folder_name.nil?
                 end
@@ -373,32 +376,6 @@ class PostfixUrlDaemon
         record_error(e)
       end
 
-      # Determine the mimetype of the file
-      def mime_shared_info(file_name)
-        #Name              : Sample.doc
-        #Type              : Regular
-        #MIME type         : application/msword
-        #Default app       : openoffice.org-writer.desktop
-
-        info = []
-
-        IO.popen("gnomevfs-info \"#{file_name}\"") { |stdout|
-
-          if (out = stdout.read)
-            out.split(/\n/).each {|line|
-              pair = line.split(':')
-              name = pair[0].strip!;
-              if ('MIME type, Default app'.include?(name))
-                info.push(pair[1].strip!)
-                break if name == 'Default app'
-              end
-            }
-          end
-        }
-
-        return info
-      end
-
       # Send the links off to AMQP exchange/queue
       def send_to_amqp_queue
 
@@ -473,7 +450,7 @@ class PostfixUrlDaemon
                 connection.close{ EM.stop }
               end
             rescue Exception => e
-              log(:error, "Problem sending message to AMQP server, #{$!}")
+              log(:error, "#{e.class} : #{e.message}; Problem sending message to AMQP server")
             end
           else
             log(:info, "Not publishing  #{@links.size} links to AMQP server :: #{@links}...")

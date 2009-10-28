@@ -18,7 +18,16 @@ class Logger
   alias original_add add
 
   def add(severity, message = nil, progname = nil, &block)
-    progname = "thread #{Thread.current.object_id} : #{progname}"
+
+    file_name = ''
+    line = ''
+
+    if /^(.+?):(\d+)(?::in `(.*)')?/ =~ caller(2).first
+      file_name = File.basename(Regexp.last_match[1])
+      line = Regexp.last_match[2].to_i
+    end
+
+    progname = "(#{Thread.current.object_id} - #{file_name} - #{line}): #{progname}"
     progname = progname.red if severity == ERROR
     progname = progname.yellow if severity == WARN
 
