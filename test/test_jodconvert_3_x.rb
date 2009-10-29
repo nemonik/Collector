@@ -66,8 +66,17 @@ class TestJODConvert_3_x < Test::Unit::TestCase
     # 2000 seed words
     initialize_urls(true, 2000)
 
-    # generate 500 docs from the URLs containing up 20 paragraphs each containg up 5 urls
-    #generate_docs(500, 20, 5)
+    @samples_files = Dir.entries(@samples_folder)
+    @samples_files.delete('.')
+    @samples_files.delete('..')
+
+    if (@samples_files.size == 0)
+      # generate 500 docs from the URLs containing up 20 paragraphs each containg up 5 urls
+      generate_docs(500, 20, 5)
+      @samples_files = Dir.entries(@samples_folder)
+      @samples_files.delete('.')
+      @samples_files.delete('..')
+    end
 
     @manager = JODConvert_3_x.instance
 
@@ -98,7 +107,7 @@ class TestJODConvert_3_x < Test::Unit::TestCase
 
   end
 
-  def send_msg(from, to, filepaths, compress = false, max_paragraph_count = 20, max_url_count = 5, chance_of_attachment = 90)
+  def send_msg(from, to, attachment_paths, compression = false, max_paragraph_count = 20, max_url_count = 5)
     subject = "Sending "
 
     message = RMail::Message::new
@@ -120,18 +129,20 @@ class TestJODConvert_3_x < Test::Unit::TestCase
     attachments = Array.new
     dst = File.join('/tmp', Guid.new.to_s)
 
-    if ((compress) && (filepaths.size > 0) && (rand() > (1 - chance_of_attachment * 0.01)))
+    if ((compression) && (attachment_paths.size > 0))
+
+      # attach files in an archive of some form
 
       Dir.mkdir(dst)
 
       tmp_filepaths = Array.new
 
-      filepaths.each { |filepath|
+      attachment_paths.each { |filepath|
         FileUtils.cp(filepath, dst)
         tmp_filepaths.push(File.join(dst, File.basename(filepath)))
       }
 
-      if (filepaths.size > 1)
+      if (attachment_paths.size > 1)
         if (rand() > 0.50)
           dst = File.join(dst, 'archive.zip')
           zip(dst, tmp_filepaths)
@@ -168,7 +179,7 @@ class TestJODConvert_3_x < Test::Unit::TestCase
 
       @log.debug("Creating attachment part for #{dst}")
 
-      subject = "#{filename} containing #{filepaths}"
+      subject = "#{filename} containing #{attachment_paths}"
 
       attachment_part.header['Content-Type'] = "#{content_type}; name=#{filename}"
       attachment_part.header['Content-Transfer-Encoding'] = 'BASE64'
@@ -180,7 +191,10 @@ class TestJODConvert_3_x < Test::Unit::TestCase
       FileUtils.rm_rf(File.dirname(dst))
 
     else
-      filepaths.each {|filepath|
+
+      # attach files individually
+
+      attachment_paths.each {|filepath|
         if File.file? filepath # ignore '.', and '..'
           attachment_part = RMail::Message::new
 
@@ -238,7 +252,7 @@ class TestJODConvert_3_x < Test::Unit::TestCase
   end
 
 
-  def send_all(from, to, path, sleep_sec = 0, attach_max = 1, compress = false, max_paragraph_count = 20, max_url_count = 5, chance_of_attachment = 90)
+  def send_all(from, to, path, sleep_sec = 0, attach_max = 1, compression = false, max_paragraph_count = 20, max_url_count = 5)
 
     value = true
     filepaths = Array.new
@@ -262,7 +276,7 @@ class TestJODConvert_3_x < Test::Unit::TestCase
           @log.debug("sending #{filepaths}")
           @log.debug("===========================")
 
-          value = value && send_msg(from, to, filepaths, compress, max_paragraph_count, max_url_count, chance_of_attachment)
+          value = value && send_msg(from, to, filepaths, compression, max_paragraph_count, max_url_count)
 
           if (sleep_sec == -1)
             random_sleep_sec = rand()
@@ -571,7 +585,7 @@ class TestJODConvert_3_x < Test::Unit::TestCase
 
             # get a random office file from samples...
             until (value)
-              file_name = File.join(@samples_folder, Dir.entries(@samples_folder)[rand(Dir.entries(@samples_folder).size)])
+              file_name = File.join(@samples_folder, @samples_files[rand(@samples_files.size)])
 
               info = mime_shared_info(file_name)
 
@@ -653,7 +667,7 @@ class TestJODConvert_3_x < Test::Unit::TestCase
 
             # get a random office file from samples...
             until (value)
-              file_name = File.join(@samples_folder, Dir.entries(@samples_folder)[rand(Dir.entries(@samples_folder).size)])
+              file_name = File.join(@samples_folder, @samples_files[rand(@samples_files.size)])
 
               info = mime_shared_info(file_name)
 
@@ -702,17 +716,58 @@ class TestJODConvert_3_x < Test::Unit::TestCase
     value = true
     from = 'walsh@localhost.localdomain'
     to = 'walsh@localhost.localdomain'
-    sleep_sec = 0
-    attach_max = 1
-    compress = false
+    attach_max = 5
+
+    chance_of_compression = 50
+    chance_of_attachment = 50
+
     max_paragraph_count = 20
     max_url_count = 5
-    chance_of_attachment = 90
-    count = 100
 
+    at = 0
+
+    Thread.new() {
+      @log.debug("Started stop webapp thread...")
+
+      while mutex.synchronize {number_of_times} > 0
+        sleep rand(60)+30
+        begin
+
+          @log.debug("Waking up, and asking for stop of webapp...".yellow)
+
+          req = Net::HTTP::Get.new("/manager/html/stop?path=#{JODConvert_3_x::WEBAPP_PATH}")
+          req.basic_auth(JODConvert_3_x::TOMCAT_MANAGER_USER, JODConvert_3_x::TOMCAT_MANAGER_PASSWORD)
+
+          Net::HTTP.start(JODConvert_3_x::HOSTNAME, JODConvert_3_x::PORT) {|http|
+            http.request(req)
+          }
+        rescue Exception => e
+          # swallow
+        end
+      end
+    }
+
+    count = 1000
     1.upto(count) do |i|
       @log.debug("starting interation #{i}")
-      value = value && send_all(from, to, @samples_folder, sleep_sec, attach_max, compress, max_paragraph_count, max_url_count, chance_of_attachment)
+      
+      attachment_paths = Array.new
+
+      1.upto(rand(attach_max) + 1) do
+        attachment_paths << File.join(@samples_folder, @samples_files[at])
+        if (at < @samples_files.size)
+          at += 1
+        else
+          at = 0
+        end
+      end if (rand()*100 <= chance_of_attachment)
+
+      @log.debug("sending msg #{i} containing: #{attachment_paths}")
+
+      value = value && send_msg(from, to, attachment_paths, rand()*100 <= chance_of_compression, max_paragraph_count, max_url_count)
+
+      sleep 0.5
+
     end
 
   rescue Exception => e
@@ -720,4 +775,5 @@ class TestJODConvert_3_x < Test::Unit::TestCase
   ensure
     assert(value, true)
   end
+
 end
