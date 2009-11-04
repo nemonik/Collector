@@ -723,6 +723,7 @@ class PostfixUrlDaemon
     @log.info("Running HoneyClient POSTFIX URL daemon on #{$options.port}...")
 
     server = TCPServer.open($options.port)
+    server_hostname = Socket.gethostname
 
     shutdown = false
     connections = 1
@@ -732,8 +733,6 @@ class PostfixUrlDaemon
     until (shutdown != false)
       @log.debug("listening...")
 
-      # might want to consider changing this over to SMTP Server interface
-      
       Thread.start(server.accept) do |socket|
 
         begin
@@ -741,10 +740,10 @@ class PostfixUrlDaemon
 
           @log.debug "Handling connection from #{socket.peeraddr[2]}:#{socket.peeraddr[1]}..."
 
-          if (socket.peeraddr[2].match(/^localhost/))
+          if (socket.peeraddr[2].match(server_hostname))
 
             text = socket.read if not socket.closed?
-
+            
             if (text.match(/^From/))
 
               @log.debug("Processing email, getting worker...")
@@ -756,6 +755,8 @@ class PostfixUrlDaemon
               @log.debug("Running worker... ")
 
               worker.run(text)
+
+              @log.debug("Leaving to pick up another connection...")
 
             elsif (text.match(/^shutdown/i))
 
@@ -833,7 +834,9 @@ class PostfixUrlDaemon
             mutex.synchronize { connections -= 1 }
           end
         rescue Errno::EPIPE => e
-          @log.error("#{e.class} : #{e.msg}")
+          @log.warn("#{e.class} : #{e.message}")
+        ensure
+          socket.close if not socket.closed?
         end
       end
     end

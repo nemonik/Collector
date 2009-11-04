@@ -714,8 +714,8 @@ class TestJODConvert_3_x < Test::Unit::TestCase
   def test_send_mail
 
     value = true
-    from = 'walsh@localhost.localdomain'
-    to = 'walsh@localhost.localdomain'
+    from = 'walsh@honeycheck-milter.mitre.org' #'walsh@localhost.localdomain'
+    to = 'walsh@honeycheck-milter.mitre.org' #'walsh@localhost.localdomain'
     attach_max = 5
 
     chance_of_compression = 50
