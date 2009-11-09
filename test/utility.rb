@@ -71,9 +71,6 @@ module Utility
 
   def initialize_urls(read_from_file, word_count = 1000)
 
-    @log.debug("#{File.exist?(@urls_filename)}")
-    @log.debug("#{read_from_file}")
-
     if (File.exist?(@urls_filename) && (read_from_file))
       read_urls_from_file
 
@@ -218,15 +215,25 @@ module Utility
       'Connection' => 'keep-alive'
     }
 
+    http_proxy = ENV['HTTP_PROXY']
+
     url_string = "http://ajax.googleapis.com/ajax/services/search/web?v=1.0&q=" << query.chop!
+
     @log.debug("url = #{url_string}")
+
     url = URI.parse(url_string)
-    request = Net::HTTP::Get.new(url_string, headers)
+    request = Net::HTTP::Get.new(url_string.gsub("http://ajax.googleapis.com",""), headers)
 
-    response = Net::HTTP.start(url.host, url.port) {|http|
-      response = http.request(request)
-    }
-
+    unless (http_proxy.nil?)
+      response = Net::HTTP::Proxy(http_proxy.split(":")[0], http_proxy.split(":")[1]).start(url.host, url.port) {|http|
+        response = http.request(request)
+      }
+    else
+      response = Net::HTTP.start(url.host, url.port) {|http|
+        response = http.request(request)
+      }
+    end
+    
     if (@log.level == Logger::DEBUG)
       stop = Time.now
       @log.debug("google search rest api responded in #{stop-start} seconds.")
@@ -245,7 +252,10 @@ module Utility
         #  swallow
       end
     }
+  rescue Zlib::GzipFile::Error => e
+    @log.error("Expected gzip format.")
+    @log.error("#{response.body}")
   rescue Exception => e
-    #  swallow
+    @log.error("#{e.class} : #{e.message}\n#{e.backtrace.join("\n")}")
   end
 end

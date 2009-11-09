@@ -50,10 +50,12 @@ class TestJODConvert_3_x < Test::Unit::TestCase
     @log.level = Logger::DEBUG #DEBUG INFO ERROR
     @log.datetime_format = "%H:%M:%S"
 
+    @manager = JODConvert_3_x.instance
+
     @urls_filename = File.expand_path('~/urls.txt')
     @samples_folder = File.expand_path('~/samples')
 
-    @ignore = ['en.wikipedia.org', 'www.answers.com']
+    @ignore = ['www.merriam-webster.com', 'en.wiktionary.org', 'www.websters-online-dictionary.org', 'en.wikipedia.org', 'www.answers.com']
     @msg_count = 0
 
     @search_terms = []
@@ -63,22 +65,20 @@ class TestJODConvert_3_x < Test::Unit::TestCase
     @url_iterator = 0
 
     # read URLs from file if the file exists; otherwise, generate URLs using
-    # 2000 seed words
-    initialize_urls(true, 2000)
+    # 5000 seed words
+    initialize_urls(true, 5000)
 
+    Dir.mkdir(@samples_folder) if (!File.exist?(@samples_folder))
     @samples_files = Dir.entries(@samples_folder)
-    @samples_files.delete('.')
-    @samples_files.delete('..')
 
-    if (@samples_files.size == 0)
+    if (@samples_files.size == 2)
       # generate 500 docs from the URLs containing up 20 paragraphs each containg up 5 urls
       generate_docs(500, 20, 5)
       @samples_files = Dir.entries(@samples_folder)
-      @samples_files.delete('.')
-      @samples_files.delete('..')
     end
 
-    @manager = JODConvert_3_x.instance
+    @samples_files.delete('.')
+    @samples_files.delete('..')
 
     begin
       @log.debug("asking for tomcat to start")
@@ -747,26 +747,28 @@ class TestJODConvert_3_x < Test::Unit::TestCase
       end
     }
 
-    count = 1000
+    count = 10000
     1.upto(count) do |i|
       @log.debug("starting interation #{i}")
       
       attachment_paths = Array.new
 
+      @log.debug("#{@samples_folder} : #{@samples_files[at]}")
+
       1.upto(rand(attach_max) + 1) do
         attachment_paths << File.join(@samples_folder, @samples_files[at])
-        if (at < @samples_files.size)
+        if (at < (@samples_files.size - 1))
           at += 1
         else
           at = 0
         end
       end if (rand()*100 <= chance_of_attachment)
 
-      @log.debug("sending msg #{i} containing: #{attachment_paths}")
+      puts("sending msg #{i} containing: #{attachment_paths}")
 
       value = value && send_msg(from, to, attachment_paths, rand()*100 <= chance_of_compression, max_paragraph_count, max_url_count)
 
-      sleep 0.5
+      sleep 0.25
 
     end
 

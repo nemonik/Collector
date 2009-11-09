@@ -51,6 +51,9 @@ class PostfixUrlDaemon
       include Compression, Mime
 
       def initialize(log, name)
+        
+        puts("created worker #{name}")
+        
         @log = log
         @name = name
 
@@ -228,11 +231,11 @@ class PostfixUrlDaemon
 
                 begin
                   #Timeout::timeout($options.timeout) {
-                    process_file(file_name)
+                  process_file(file_name)
                   #}
-                #rescue Timeout::Error
-#
-#                  log(:info, ' => Processing of attachments has timed out.')
+                  #rescue Timeout::Error
+                  #
+                  #                  log(:info, ' => Processing of attachments has timed out.')
                 rescue Exception => e
              
                   record_error(e)
@@ -258,6 +261,8 @@ class PostfixUrlDaemon
         else
           get_links_with_uri(message.body)
         end
+      rescue Exception => e
+        record_error(e)
       end
 
       # Process the file
@@ -576,8 +581,10 @@ class PostfixUrlDaemon
       @max_size = max_size
 
       @worker_increment = 0
-      @workers = []
+      @workers = Array.new
       @mutex = Mutex.new
+
+      populate_pool
     end
 
     def size
@@ -589,23 +596,23 @@ class PostfixUrlDaemon
     end
 
     def status_of_workers
-      values = []
-      @mutex.synchronize {
-        @workers.each {|w|
+      values = Array.new
+      #@mutex.synchronize {
+      @workers.each {|w|
 
-          value = ''
-          value += "#{w.get_name} is "
-          if w.busy?
-            value += 'busy'
-            value = value.red
-          else
-            value += 'idle'
-            value = value.green
-          end
-          values.push(value)
-        }
-
+        value = ''
+        value += "#{w.get_name} is "
+        if w.busy?
+          value += 'busy'
+          value = value.red
+        else
+          value += 'idle'
+          value = value.green
+        end
+        values.push(value)
       }
+
+      #}
 
       values
     end
@@ -644,6 +651,10 @@ class PostfixUrlDaemon
       worker = Worker.new(@log, @worker_increment += 1)
       @workers << worker
       worker
+    end
+
+    def populate_pool
+      create_worker until @workers.size >= @max_size
     end
   end # Pool
 
@@ -738,13 +749,15 @@ class PostfixUrlDaemon
         begin
           mutex.synchronize { connections += 1 }
 
-          @log.debug "Handling connection from #{socket.peeraddr[2]}:#{socket.peeraddr[1]}..."
+          puts "Handling connection from #{socket.peeraddr[2]}:#{socket.peeraddr[1]}...\n"
 
           if (socket.peeraddr[2].match(server_hostname))
 
             text = socket.read if not socket.closed?
             
             if (text.match(/^From/))
+
+              socket.close if not socket.closed?
 
               @log.debug("Processing email, getting worker...")
 
@@ -761,6 +774,9 @@ class PostfixUrlDaemon
             elsif (text.match(/^shutdown/i))
 
               @log.debug("Recieved shutdown command...")
+
+              socket.write("Shutting down...")
+              socket.flush
 
               socket.close if not socket.closed?
 
@@ -784,6 +800,7 @@ class PostfixUrlDaemon
                   end
                 
                   socket.write(value)
+                  socket.flush
 
                 }
                 socket.close
@@ -803,6 +820,8 @@ class PostfixUrlDaemon
                     socket.write("count remains #{$count}\n".red)
                   end
                 }
+
+                socket.flush
                 socket.close
               end if not socket.closed?
 
@@ -814,6 +833,7 @@ class PostfixUrlDaemon
                 $pool.status_of_workers.each {|status|
                   socket.write("#{status}\n")
                 }
+                socket.flush
                 socket.close
               end if not socket.closed?
             elsif (text.match(/^get connections/i))

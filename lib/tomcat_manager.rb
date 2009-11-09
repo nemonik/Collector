@@ -49,7 +49,7 @@ class TomcatManager
     @mutex = Mutex.new
    
     @log = Logger.new(STDOUT)
-    @log.level = Logger::DEBUG #DEBUG INFO ERROR
+    @log.level = Logger::WARN #DEBUG INFO ERROR
     @log.datetime_format = "%H:%M:%S"
   end
 
