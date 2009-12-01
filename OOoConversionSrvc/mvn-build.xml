@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project basedir="." default="run-OOoConversionServer" name="OOoConversionSrvc"
+xmlns:artifact="urn:maven-artifact-ant">
+
+	<!-- author Michael Joseph Walsh -->
+	<property name="target.home" value="target"/>
+	<property name="dist.home" value="${target.home}/dist"/>
+	<property name="mvn-depends.home"
+	value="${target.home}/mvn-depends"/>
+
+	<typedef resource="org/apache/maven/artifact/ant/antlib.xml"
+	uri="urn:maven-artifact-ant">
+		<classpath>
+			<pathelement
+			location="lib/build/maven-ant-tasks-2.0.10.jar" />
+		</classpath>
+	</typedef>
+
+	<artifact:pom id="pom" file="pom.xml" />
+
+	<property name="version" value="${pom.version}"/>
+	<property name="name" value="${pom.artifactId}"/>
+	<property name="project.name" value="${pom.name}"/>
+
+	<artifact:dependencies useScope="compile" pathId="compile.classpath"
+	filesetId="compile.fileset" >
+		<pom refid="pom" />
+	</artifact:dependencies>
+
+	<artifact:dependencies useScope="runtime" pathId="runtime.classpath"
+	filesetId="runtime.fileset" >
+		<pom refid="pom" />
+	</artifact:dependencies>
+
+	<artifact:dependencies useScope="test" pathId="test.classpath"
+	filesetId="test.fileset">
+		<pom refid="pom" />
+	</artifact:dependencies>
+
+	<!-- Create an executable jar containing all the dependencies -->
+	<target name="create-executable-jar"
+	depends="copy-mvn-depends-from-repository">
+		<echo message="This target will exclude certain libs maven
+		ant ant automaticially add, remember to watch what is
+		included if the dependencies change."/>
+		
+		<delete dir="${dist.home}"/>
+
+		<mkdir dir="${dist.home}"/>
+
+		<unjar src="${target.home}/${name}-${version}.jar"
+		dest="${dist.home}"/>
+
+		<unjar dest="${dist.home}">
+			<fileset dir="${mvn-depends.home}">
+				<include name="**/*.jar"/>
+				<exclude name="**/maven*"/>
+				<exclude name="**/*maven*"/>
+				<exclude name="**/ant*"/>
+				<exclude name="**/plexus*"/>
+				<exclude name="**/wagon*"/>
+				<exclude name="**/classworlds*"/>
+			</fileset>
+		</unjar>
+
+		<delete dir="${dist.home}/META-INF"/>
+
+		<jar
+		destfile="${target.home}/${name}-${version}-executable.jar"
+		basedir="${dist.home}">
+			<manifest>
+				<attribute name="Built-By"
+				value="${user.name}"/>
+				<attribute name="Main-Class"
+				value="org.mitre.honeyclient.OOoConversionServer"/>
+			</manifest>
+		</jar>
+
+	</target>
+
+
+	<!-- copy pom.xml described dependencies -->
+	<target name="copy-mvn-depends-from-repository">
+
+		<delete dir="${mvn-depends.home}"/>
+
+		<mkdir dir="${mvn-depends.home}"/>
+
+		<copy todir="${mvn-depends.home}" verbose="true">
+			<fileset refid="runtime.fileset"/>
+			<mapper type="flatten" />
+		</copy>
+	</target>
+
+	<!-- run the OOoConversionServer -->
+	<target name="run-OOoConversionServer" depends="create-executable-jar">
+
+		<java   classname="org.mitre.honeyclient.OOoConversionServer"
+				      dir="${basedir}/build/target"
+			         fork="true"
+			  failonerror="true">
+			<arg
+			  line="12345"/>
+			<classpath>
+				<pathelement
+				location="${basedir}/target/OOoConversion-1.0-SNAPSHOT-executable.jar"/>
+				<pathelement path="${java.class.path}"/>
+			</classpath>
+		</java>
+
+	</target>	
+	
+</project>
