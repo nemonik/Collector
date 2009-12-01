@@ -1,13 +1,12 @@
-/*
- * To change this template, choose Tools | Templates
- * and open the template in the editor.
- */
-
 package org.mitre.honeyclient;
 
 /**
+ * A POJO used for JSON-based response
  *
- * @author walsh
+ * @author    Michael Joseph Walsh (mailto:mjwalsh_n_o__s_p_a_m@mitre.org)
+ * Copyright:: Copyright (c) 2009 The MITRE Corporation.  All Rights Reserved.
+ * License::
+ *
  */
 public class Response {
 

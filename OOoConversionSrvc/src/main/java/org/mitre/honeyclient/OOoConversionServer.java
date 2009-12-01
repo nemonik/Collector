@@ -31,6 +31,14 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 import org.artofsolving.jodconverter.office.OfficeException;
 
+/**
+ * A service for MS Office and the like document conversion
+ *
+ * @author    Michael Joseph Walsh (mailto:mjwalsh_n_o__s_p_a_m@mitre.org)
+ * Copyright:: Copyright (c) 2009 The MITRE Corporation.  All Rights Reserved.
+ * License::
+ *
+ */
 public class OOoConversionServer {
 
     public static final String PARAMETER_OFFICE_PORT = "officePort";
