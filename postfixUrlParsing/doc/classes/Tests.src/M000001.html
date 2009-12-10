@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="iso-8859-1"?>
+<!DOCTYPE html 
+     PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+     "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+<html>
+<head>
+  <title>setup (Tests)</title>
+  <meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1" />
+  <link rel="stylesheet" href="../.././rdoc-style.css" type="text/css" media="screen" />
+</head>
+<body class="standalone-code">
+  <pre><span class="ruby-comment cmt"># File test/tests.rb, line 49</span>
+  <span class="ruby-keyword kw">def</span> <span class="ruby-identifier">setup</span>
+
+    <span class="ruby-ivar">@ooo_conversion_srvc_client</span> = <span class="ruby-constant">OOoConversionSrvcClient</span>
+
+    <span class="ruby-ivar">@urls_filename</span> = <span class="ruby-constant">File</span>.<span class="ruby-identifier">expand_path</span>(<span class="ruby-value str">'~/urls.txt'</span>)
+    <span class="ruby-ivar">@samples_folder</span> = <span class="ruby-constant">File</span>.<span class="ruby-identifier">expand_path</span>(<span class="ruby-value str">'~/samples'</span>)
+
+    <span class="ruby-ivar">@ignore</span> = [<span class="ruby-value str">'www.merriam-webster.com'</span>, <span class="ruby-value str">'en.wiktionary.org'</span>, <span class="ruby-value str">'www.websters-online-dictionary.org'</span>, <span class="ruby-value str">'en.wikipedia.org'</span>, <span class="ruby-value str">'www.answers.com'</span>]
+    <span class="ruby-ivar">@msg_count</span> = <span class="ruby-value">0</span>
+
+    <span class="ruby-ivar">@search_terms</span> = []
+    <span class="ruby-ivar">@search_term_iterator</span> = <span class="ruby-value">0</span>
+
+    <span class="ruby-ivar">@urls</span> = []
+    <span class="ruby-ivar">@url_iterator</span> = <span class="ruby-value">0</span>
+
+    <span class="ruby-comment cmt"># read URLs from file if the file exists; otherwise, generate URLs using</span>
+    <span class="ruby-comment cmt"># 5000 seed words</span>
+    <span class="ruby-identifier">initialize_urls</span>(<span class="ruby-keyword kw">true</span>, <span class="ruby-value">5000</span>)
+
+    <span class="ruby-constant">Dir</span>.<span class="ruby-identifier">mkdir</span>(<span class="ruby-ivar">@samples_folder</span>) <span class="ruby-keyword kw">if</span> (<span class="ruby-operator">!</span><span class="ruby-constant">File</span>.<span class="ruby-identifier">exist?</span>(<span class="ruby-ivar">@samples_folder</span>))
+    <span class="ruby-ivar">@samples_files</span> = <span class="ruby-constant">Dir</span>.<span class="ruby-identifier">entries</span>(<span class="ruby-ivar">@samples_folder</span>)
+
+    <span class="ruby-keyword kw">if</span> (<span class="ruby-ivar">@samples_files</span>.<span class="ruby-identifier">size</span> <span class="ruby-operator">==</span> <span class="ruby-value">2</span>)
+      <span class="ruby-comment cmt"># generate 500 docs from the URLs containing up 20 paragraphs each containg up 5 urls</span>
+      <span class="ruby-identifier">generate_docs</span>(<span class="ruby-value">500</span>, <span class="ruby-value">20</span>, <span class="ruby-value">5</span>)
+      <span class="ruby-ivar">@samples_files</span> = <span class="ruby-constant">Dir</span>.<span class="ruby-identifier">entries</span>(<span class="ruby-ivar">@samples_folder</span>)
+    <span class="ruby-keyword kw">end</span>
+
+    <span class="ruby-ivar">@samples_files</span>.<span class="ruby-identifier">delete</span>(<span class="ruby-value str">'.'</span>)
+    <span class="ruby-ivar">@samples_files</span>.<span class="ruby-identifier">delete</span>(<span class="ruby-value str">'..'</span>)
+
+
+
+    <span class="ruby-constant">LOG</span>.<span class="ruby-identifier">debug</span>(<span class="ruby-value str">&quot;initialized...&quot;</span>)
+  <span class="ruby-keyword kw">end</span></pre>
+</body>
+</html>

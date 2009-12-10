@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="iso-8859-1"?>
+<!DOCTYPE html 
+     PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+     "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+<html>
+<head>
+  <title>parsed_options? (DEBUG)</title>
+  <meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1" />
+  <link rel="stylesheet" href="../.././rdoc-style.css" type="text/css" media="screen" />
+</head>
+<body class="standalone-code">
+  <pre><span class="ruby-comment cmt"># File test/debug.rb, line 82</span>
+  <span class="ruby-keyword kw">def</span> <span class="ruby-identifier">parsed_options?</span>
+    <span class="ruby-comment cmt"># Specify options</span>
+    <span class="ruby-identifier">option_parser</span> = <span class="ruby-constant">OptionParser</span>.<span class="ruby-identifier">new</span> { <span class="ruby-operator">|</span><span class="ruby-identifier">opts</span><span class="ruby-operator">|</span>
+            
+      <span class="ruby-identifier">opts</span>.<span class="ruby-identifier">banner</span> = <span class="ruby-value str">&quot;Usage:  #$0 [options]&quot;</span>
+                  
+      <span class="ruby-identifier">explanation</span> = <span class="ruby-value str">&quot;\nA script to subscribe to a RabbitMQ exchange and print out JSON messages for\ndebug purposes.\n\nExamples:\ndebug.rb --amqp_host drone.honeyclient.org --amqp_port 5672 \\\\\\\\\n--amqp_vhost /collector.testing --amqp_user guest --amqp_password guest \\\\\\\\\n--amqp_exchange events --amqp_routing_key 1.job.create.job.urls.job_alerts \\\\\\\\\\\n\ndebug.rb -h\n&quot;</span>
+                                                                                                                           
+      <span class="ruby-identifier">opts</span>.<span class="ruby-identifier">separator</span>(<span class="ruby-identifier">explanation</span>)
+      <span class="ruby-identifier">opts</span>.<span class="ruby-identifier">separator</span>(<span class="ruby-value str">''</span>)
+      <span class="ruby-identifier">opts</span>.<span class="ruby-identifier">separator</span>(<span class="ruby-value str">'Common options:'</span>)
+      
+      <span class="ruby-identifier">opts</span>.<span class="ruby-identifier">on</span>(<span class="ruby-value str">'-v'</span>, <span class="ruby-value str">'--version'</span>, <span class="ruby-value str">'display version number and exit.'</span>) {<span class="ruby-identifier">output_version</span> ; <span class="ruby-identifier">exit</span> <span class="ruby-value">0</span> }
+
+      <span class="ruby-identifier">opts</span>.<span class="ruby-identifier">on</span>(<span class="ruby-value str">'-h'</span>, <span class="ruby-value str">'--help'</span>, <span class="ruby-value str">'display this help and exit.'</span>) <span class="ruby-keyword kw">do</span>
+        <span class="ruby-identifier">puts</span> <span class="ruby-identifier">opts</span>
+       <span class="ruby-identifier">exit</span>
+      <span class="ruby-keyword kw">end</span>                
+                                                                                                                                                   
+      <span class="ruby-identifier">opts</span>.<span class="ruby-identifier">separator</span>(<span class="ruby-value str">''</span>)
+      <span class="ruby-identifier">opts</span>.<span class="ruby-identifier">separator</span>(<span class="ruby-value str">'AMQP server options:'</span>)
+                  
+      <span class="ruby-identifier">opts</span>.<span class="ruby-identifier">on</span>(<span class="ruby-value str">'-H'</span>, <span class="ruby-value str">'--amqp_host HOST'</span>, <span class="ruby-constant">String</span>, <span class="ruby-value str">'set host to HOST.'</span>) { <span class="ruby-operator">|</span><span class="ruby-identifier">host</span><span class="ruby-operator">|</span>
+        <span class="ruby-ivar">@options</span>.<span class="ruby-identifier">amqp_host</span> = <span class="ruby-identifier">host</span>
+      }
+                                      
+      <span class="ruby-identifier">opts</span>.<span class="ruby-identifier">on</span>(<span class="ruby-value str">'-P'</span>, <span class="ruby-value str">'--amqp_port PORT'</span>, <span class="ruby-constant">Integer</span>, <span class="ruby-value str">'set port to PORT.'</span>) { <span class="ruby-operator">|</span><span class="ruby-identifier">port</span><span class="ruby-operator">|</span>
+        <span class="ruby-ivar">@options</span>.<span class="ruby-identifier">amqp_port</span> = <span class="ruby-identifier">port</span>
+      }
+                                                          
+      <span class="ruby-identifier">opts</span>.<span class="ruby-identifier">on</span>(<span class="ruby-value str">'-u'</span>, <span class="ruby-value str">'--amqp_user USER'</span>, <span class="ruby-constant">String</span>, <span class="ruby-value str">'set login to USER.'</span>) { <span class="ruby-operator">|</span><span class="ruby-identifier">user</span><span class="ruby-operator">|</span>
+        <span class="ruby-ivar">@options</span>.<span class="ruby-identifier">amqp_user</span> = <span class="ruby-identifier">user</span>
+      }
+                                                                              
+      <span class="ruby-identifier">opts</span>.<span class="ruby-identifier">on</span>(<span class="ruby-value str">'-p'</span>, <span class="ruby-value str">'--amqp_password PASSWORD'</span>, <span class="ruby-constant">String</span>, <span class="ruby-value str">'set password to PASSWORD.'</span>) {<span class="ruby-operator">|</span><span class="ruby-identifier">password</span><span class="ruby-operator">|</span>
+       <span class="ruby-ivar">@options</span>.<span class="ruby-identifier">amqp_password</span> = <span class="ruby-identifier">password</span>
+      }
+                                                                                                 
+      <span class="ruby-identifier">opts</span>.<span class="ruby-identifier">on</span>(<span class="ruby-value str">'-e'</span>, <span class="ruby-value str">'--amqp_exchange EXCHANGE'</span>, <span class="ruby-constant">String</span>, <span class="ruby-value str">'set exchange to EXCHANGE.'</span>) {<span class="ruby-operator">|</span><span class="ruby-identifier">exchange</span><span class="ruby-operator">|</span>
+        <span class="ruby-ivar">@options</span>.<span class="ruby-identifier">amqp_exchange</span> = <span class="ruby-identifier">exchange</span>
+      }
+                                                                                                                      
+      <span class="ruby-identifier">opts</span>.<span class="ruby-identifier">on</span>(<span class="ruby-value str">'-v'</span>, <span class="ruby-value str">'--amqp_vhost VHOST'</span>, <span class="ruby-constant">String</span>, <span class="ruby-value str">'set virtual host to VHOST.'</span>) {<span class="ruby-operator">|</span><span class="ruby-identifier">vhost</span><span class="ruby-operator">|</span>
+        <span class="ruby-ivar">@options</span>.<span class="ruby-identifier">amqp_vhost</span> = <span class="ruby-identifier">vhost</span>
+      }
+      
+      <span class="ruby-identifier">opts</span>.<span class="ruby-identifier">on</span>(<span class="ruby-value str">'-k'</span>, <span class="ruby-value str">'--amqp_routing_key ROUTING_KEY'</span>, <span class="ruby-constant">String</span>, <span class="ruby-value str">'set routing key to ROUTING_KEY.'</span>) {<span class="ruby-operator">|</span><span class="ruby-identifier">routing_key</span><span class="ruby-operator">|</span>
+        <span class="ruby-ivar">@options</span>.<span class="ruby-identifier">amqp_routing_key</span> = <span class="ruby-identifier">routing_key</span>
+      }
+                                              
+    } 
+    
+    <span class="ruby-identifier">option_parser</span>.<span class="ruby-identifier">parse!</span>(<span class="ruby-ivar">@arguments</span>) <span class="ruby-keyword kw">rescue</span> <span class="ruby-keyword kw">return</span> <span class="ruby-keyword kw">false</span>
+    
+    <span class="ruby-keyword kw">true</span>
+  <span class="ruby-keyword kw">end</span></pre>
+</body>
+</html>

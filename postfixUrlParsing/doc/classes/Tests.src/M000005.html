@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="iso-8859-1"?>
+<!DOCTYPE html 
+     PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+     "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+<html>
+<head>
+  <title>send_all (Tests)</title>
+  <meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1" />
+  <link rel="stylesheet" href="../.././rdoc-style.css" type="text/css" media="screen" />
+</head>
+<body class="standalone-code">
+  <pre><span class="ruby-comment cmt"># File test/tests.rb, line 248</span>
+  <span class="ruby-keyword kw">def</span> <span class="ruby-identifier">send_all</span>(<span class="ruby-identifier">from</span>, <span class="ruby-identifier">to</span>, <span class="ruby-identifier">path</span>, <span class="ruby-identifier">sleep_sec</span> = <span class="ruby-value">0</span>, <span class="ruby-identifier">attach_max</span> = <span class="ruby-value">1</span>, <span class="ruby-identifier">compression</span> = <span class="ruby-keyword kw">false</span>, <span class="ruby-identifier">max_paragraph_count</span> = <span class="ruby-value">20</span>, <span class="ruby-identifier">max_url_count</span> = <span class="ruby-value">5</span>)
+
+    <span class="ruby-identifier">value</span> = <span class="ruby-keyword kw">true</span>
+    <span class="ruby-identifier">filepaths</span> = <span class="ruby-constant">Array</span>.<span class="ruby-identifier">new</span>
+    <span class="ruby-identifier">attach_count</span> = <span class="ruby-identifier">rand</span>(<span class="ruby-identifier">attach_max</span>)
+
+    <span class="ruby-identifier">at</span> = <span class="ruby-value">0</span>
+    <span class="ruby-identifier">entries</span> = <span class="ruby-constant">Dir</span>.<span class="ruby-identifier">entries</span>(<span class="ruby-identifier">path</span>)
+    <span class="ruby-identifier">entries</span>.<span class="ruby-identifier">each</span> { <span class="ruby-operator">|</span><span class="ruby-identifier">filename</span><span class="ruby-operator">|</span>
+
+      <span class="ruby-identifier">at</span> <span class="ruby-operator">+=</span><span class="ruby-value">1</span>
+
+      <span class="ruby-identifier">filepath</span> = <span class="ruby-constant">File</span>.<span class="ruby-identifier">join</span>(<span class="ruby-identifier">path</span>, <span class="ruby-identifier">filename</span>)
+
+      <span class="ruby-keyword kw">if</span> <span class="ruby-constant">File</span>.<span class="ruby-identifier">file?</span> <span class="ruby-identifier">filepath</span>
+
+        <span class="ruby-keyword kw">if</span> (<span class="ruby-identifier">filepaths</span>.<span class="ruby-identifier">size</span> <span class="ruby-operator">&lt;</span> <span class="ruby-identifier">attach_count</span>)
+          <span class="ruby-identifier">filepaths</span>.<span class="ruby-identifier">push</span>(<span class="ruby-identifier">filepath</span>)
+        <span class="ruby-keyword kw">end</span>
+
+        <span class="ruby-keyword kw">if</span> ((<span class="ruby-identifier">filepaths</span>.<span class="ruby-identifier">size</span> <span class="ruby-operator">==</span> <span class="ruby-identifier">attach_count</span>) <span class="ruby-operator">||</span> (<span class="ruby-identifier">at</span> <span class="ruby-operator">==</span> <span class="ruby-identifier">entries</span>.<span class="ruby-identifier">size</span>))
+          <span class="ruby-constant">LOG</span>.<span class="ruby-identifier">debug</span>(<span class="ruby-node">&quot;sending #{filepaths}&quot;</span>)
+          <span class="ruby-constant">LOG</span>.<span class="ruby-identifier">debug</span>(<span class="ruby-value str">&quot;===========================&quot;</span>)
+
+          <span class="ruby-identifier">value</span> = <span class="ruby-identifier">value</span> <span class="ruby-operator">&amp;&amp;</span> <span class="ruby-identifier">send_msg</span>(<span class="ruby-identifier">from</span>, <span class="ruby-identifier">to</span>, <span class="ruby-identifier">filepaths</span>, <span class="ruby-identifier">compression</span>, <span class="ruby-identifier">max_paragraph_count</span>, <span class="ruby-identifier">max_url_count</span>)
+
+          <span class="ruby-keyword kw">if</span> (<span class="ruby-identifier">sleep_sec</span> <span class="ruby-operator">==</span> <span class="ruby-value">-1</span>)
+            <span class="ruby-identifier">random_sleep_sec</span> = <span class="ruby-identifier">rand</span>()
+            <span class="ruby-constant">LOG</span>.<span class="ruby-identifier">debug</span>(<span class="ruby-node">&quot;sleeping #{random_sleep_sec} seconds...&quot;</span>)
+            <span class="ruby-identifier">sleep</span>(<span class="ruby-identifier">random_sleep_sec</span>)
+          <span class="ruby-keyword kw">else</span>
+            <span class="ruby-constant">LOG</span>.<span class="ruby-identifier">debug</span>(<span class="ruby-node">&quot;sleeping #{sleep_sec} seconds...&quot;</span>)
+            <span class="ruby-identifier">sleep</span>(<span class="ruby-identifier">sleep_sec</span>)
+          <span class="ruby-keyword kw">end</span>
+          <span class="ruby-constant">LOG</span>.<span class="ruby-identifier">debug</span>(<span class="ruby-value str">&quot;===========================&quot;</span>)
+
+          <span class="ruby-identifier">filepaths</span> = <span class="ruby-constant">Array</span>.<span class="ruby-identifier">new</span>
+        <span class="ruby-keyword kw">end</span>
+      <span class="ruby-keyword kw">else</span>
+        <span class="ruby-constant">LOG</span>.<span class="ruby-identifier">debug</span>(<span class="ruby-node">&quot;not sending #{filepath}&quot;</span>)
+      <span class="ruby-keyword kw">end</span>
+    }
+
+    <span class="ruby-keyword kw">return</span> <span class="ruby-identifier">value</span>
+  <span class="ruby-keyword kw">end</span></pre>
+</body>
+</html>

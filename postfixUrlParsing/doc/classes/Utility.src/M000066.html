@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="iso-8859-1"?>
+<!DOCTYPE html 
+     PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+     "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+<html>
+<head>
+  <title>get_urls (Utility)</title>
+  <meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1" />
+  <link rel="stylesheet" href="../.././rdoc-style.css" type="text/css" media="screen" />
+</head>
+<body class="standalone-code">
+  <pre><span class="ruby-comment cmt"># File test/utility.rb, line 202</span>
+  <span class="ruby-keyword kw">def</span> <span class="ruby-identifier">get_urls</span>
+    <span class="ruby-constant">LOG</span>.<span class="ruby-identifier">debug</span>(<span class="ruby-value str">&quot;calling google search rest api&quot;</span>)
+
+    <span class="ruby-identifier">query</span> = <span class="ruby-value str">''</span>
+    <span class="ruby-comment cmt"># randomly generate a query string using 2 to 4 words</span>
+    (<span class="ruby-value">1</span><span class="ruby-operator">..</span>(<span class="ruby-identifier">rand</span>(<span class="ruby-value">1</span>)<span class="ruby-operator">+</span><span class="ruby-value">2</span>)).<span class="ruby-identifier">each</span> { <span class="ruby-operator">|</span><span class="ruby-identifier">i</span><span class="ruby-operator">|</span>
+      <span class="ruby-identifier">query</span> <span class="ruby-operator">&lt;&lt;</span> <span class="ruby-ivar">@search_terms</span>[<span class="ruby-identifier">increment_search_term_iterator</span>()] <span class="ruby-operator">&lt;&lt;</span> <span class="ruby-value str">'+'</span>
+    }
+
+    <span class="ruby-identifier">start</span> = <span class="ruby-constant">Time</span>.<span class="ruby-identifier">now</span> <span class="ruby-keyword kw">if</span> (<span class="ruby-constant">LOG</span>.<span class="ruby-identifier">level</span> <span class="ruby-operator">==</span> <span class="ruby-constant">Logger</span><span class="ruby-operator">::</span><span class="ruby-constant">DEBUG</span>)
+    <span class="ruby-identifier">headers</span> = {
+      <span class="ruby-value str">'User-Agent'</span> =<span class="ruby-operator">&gt;</span>   <span class="ruby-value str">'Mozilla/5.0 (Macintosh; U; Intel Mac OS X 10.5; en-US; rv:1.9.1) Gecko/20090624 Firefox/3.5'</span>,
+      <span class="ruby-value str">'Accept'</span> =<span class="ruby-operator">&gt;</span>       <span class="ruby-value str">'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'</span>,
+      <span class="ruby-value str">'Accept-Language'</span> =<span class="ruby-operator">&gt;</span>      <span class="ruby-value str">'en-us,en;q=0.5'</span>,
+      <span class="ruby-value str">'Accept-Encoding'</span> =<span class="ruby-operator">&gt;</span>      <span class="ruby-value str">'gzip,deflate'</span>,
+      <span class="ruby-value str">'Accept-Charset'</span> =<span class="ruby-operator">&gt;</span>       <span class="ruby-value str">'ISO-8859-1,utf-8;q=0.7,*;q=0.7'</span>,
+      <span class="ruby-value str">'Keep-Alive'</span> =<span class="ruby-operator">&gt;</span> <span class="ruby-value str">'300'</span>,
+      <span class="ruby-value str">'Connection'</span> =<span class="ruby-operator">&gt;</span> <span class="ruby-value str">'keep-alive'</span>
+    }
+
+    <span class="ruby-identifier">http_proxy</span> = <span class="ruby-constant">ENV</span>[<span class="ruby-value str">'HTTP_PROXY'</span>]
+
+    <span class="ruby-identifier">url_string</span> = <span class="ruby-value str">&quot;http://ajax.googleapis.com/ajax/services/search/web?v=1.0&amp;q=&quot;</span> <span class="ruby-operator">&lt;&lt;</span> <span class="ruby-identifier">query</span>.<span class="ruby-identifier">chop!</span>
+
+    <span class="ruby-constant">LOG</span>.<span class="ruby-identifier">debug</span>(<span class="ruby-node">&quot;url = #{url_string}&quot;</span>)
+
+    <span class="ruby-identifier">url</span> = <span class="ruby-constant">URI</span>.<span class="ruby-identifier">parse</span>(<span class="ruby-identifier">url_string</span>)
+    <span class="ruby-identifier">request</span> = <span class="ruby-constant">Net</span><span class="ruby-operator">::</span><span class="ruby-constant">HTTP</span><span class="ruby-operator">::</span><span class="ruby-constant">Get</span>.<span class="ruby-identifier">new</span>(<span class="ruby-identifier">url_string</span>.<span class="ruby-identifier">gsub</span>(<span class="ruby-value str">&quot;http://ajax.googleapis.com&quot;</span>,<span class="ruby-value str">&quot;&quot;</span>), <span class="ruby-identifier">headers</span>)
+
+    <span class="ruby-keyword kw">unless</span> (<span class="ruby-identifier">http_proxy</span>.<span class="ruby-identifier">nil?</span>)
+      <span class="ruby-identifier">response</span> = <span class="ruby-constant">Net</span><span class="ruby-operator">::</span><span class="ruby-constant">HTTP</span><span class="ruby-operator">::</span><span class="ruby-constant">Proxy</span>(<span class="ruby-identifier">http_proxy</span>.<span class="ruby-identifier">split</span>(<span class="ruby-value str">&quot;:&quot;</span>)[<span class="ruby-value">0</span>], <span class="ruby-identifier">http_proxy</span>.<span class="ruby-identifier">split</span>(<span class="ruby-value str">&quot;:&quot;</span>)[<span class="ruby-value">1</span>]).<span class="ruby-identifier">start</span>(<span class="ruby-identifier">url</span>.<span class="ruby-identifier">host</span>, <span class="ruby-identifier">url</span>.<span class="ruby-identifier">port</span>) {<span class="ruby-operator">|</span><span class="ruby-identifier">http</span><span class="ruby-operator">|</span>
+        <span class="ruby-identifier">response</span> = <span class="ruby-identifier">http</span>.<span class="ruby-identifier">request</span>(<span class="ruby-identifier">request</span>)
+      }
+    <span class="ruby-keyword kw">else</span>
+      <span class="ruby-identifier">response</span> = <span class="ruby-constant">Net</span><span class="ruby-operator">::</span><span class="ruby-constant">HTTP</span>.<span class="ruby-identifier">start</span>(<span class="ruby-identifier">url</span>.<span class="ruby-identifier">host</span>, <span class="ruby-identifier">url</span>.<span class="ruby-identifier">port</span>) {<span class="ruby-operator">|</span><span class="ruby-identifier">http</span><span class="ruby-operator">|</span>
+        <span class="ruby-identifier">response</span> = <span class="ruby-identifier">http</span>.<span class="ruby-identifier">request</span>(<span class="ruby-identifier">request</span>)
+      }
+    <span class="ruby-keyword kw">end</span>
+    
+    <span class="ruby-keyword kw">if</span> (<span class="ruby-constant">LOG</span>.<span class="ruby-identifier">level</span> <span class="ruby-operator">==</span> <span class="ruby-constant">Logger</span><span class="ruby-operator">::</span><span class="ruby-constant">DEBUG</span>)
+      <span class="ruby-identifier">stop</span> = <span class="ruby-constant">Time</span>.<span class="ruby-identifier">now</span>
+      <span class="ruby-constant">LOG</span>.<span class="ruby-identifier">debug</span>(<span class="ruby-node">&quot;google search rest api responded in #{stop-start} seconds.&quot;</span>)
+    <span class="ruby-keyword kw">end</span>
+
+    <span class="ruby-identifier">response</span> = <span class="ruby-constant">Zlib</span><span class="ruby-operator">::</span><span class="ruby-constant">GzipReader</span>.<span class="ruby-identifier">new</span>(<span class="ruby-constant">StringIO</span>.<span class="ruby-identifier">new</span>(<span class="ruby-identifier">response</span>.<span class="ruby-identifier">body</span>))
+
+    <span class="ruby-identifier">response</span> = <span class="ruby-constant">JSON</span>.<span class="ruby-identifier">parse</span>(<span class="ruby-identifier">response</span>.<span class="ruby-identifier">read</span>)
+
+    <span class="ruby-identifier">response</span>[<span class="ruby-value str">'responseData'</span>][<span class="ruby-value str">'results'</span>].<span class="ruby-identifier">each</span> { <span class="ruby-operator">|</span><span class="ruby-identifier">item</span><span class="ruby-operator">|</span>
+      <span class="ruby-keyword kw">begin</span>
+        <span class="ruby-identifier">url</span> = <span class="ruby-identifier">item</span>[<span class="ruby-value str">'url'</span>]
+        <span class="ruby-identifier">host</span> = <span class="ruby-constant">URI</span>.<span class="ruby-identifier">parse</span>(<span class="ruby-identifier">url</span>).<span class="ruby-identifier">host</span>
+        <span class="ruby-ivar">@urls</span>.<span class="ruby-identifier">push</span>(<span class="ruby-identifier">url</span>) <span class="ruby-keyword kw">if</span> (<span class="ruby-operator">!</span><span class="ruby-ivar">@ignore</span>.<span class="ruby-identifier">include?</span>(<span class="ruby-identifier">host</span>))
+      <span class="ruby-keyword kw">rescue</span> <span class="ruby-constant">Exception</span> =<span class="ruby-operator">&gt;</span> <span class="ruby-identifier">e</span>
+        <span class="ruby-comment cmt">#  swallow</span>
+      <span class="ruby-keyword kw">end</span>
+    }
+  <span class="ruby-keyword kw">rescue</span> <span class="ruby-constant">Zlib</span><span class="ruby-operator">::</span><span class="ruby-constant">GzipFile</span><span class="ruby-operator">::</span><span class="ruby-constant">Error</span> =<span class="ruby-operator">&gt;</span> <span class="ruby-identifier">e</span>
+    <span class="ruby-constant">LOG</span>.<span class="ruby-identifier">error</span>(<span class="ruby-value str">&quot;Expected gzip format.&quot;</span>)
+    <span class="ruby-constant">LOG</span>.<span class="ruby-identifier">error</span>(<span class="ruby-node">&quot;#{response.body}&quot;</span>)
+  <span class="ruby-keyword kw">rescue</span> <span class="ruby-constant">Exception</span> =<span class="ruby-operator">&gt;</span> <span class="ruby-identifier">e</span>
+    <span class="ruby-constant">LOG</span>.<span class="ruby-identifier">error</span>(<span class="ruby-node">&quot;#{e.class} : #{e.message}\n#{e.backtrace.join(&quot;\n&quot;)}&quot;</span>)
+  <span class="ruby-keyword kw">end</span></pre>
+</body>
+</html>

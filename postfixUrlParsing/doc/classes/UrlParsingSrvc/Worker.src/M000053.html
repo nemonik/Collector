@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="iso-8859-1"?>
+<!DOCTYPE html 
+     PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+     "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+<html>
+<head>
+  <title>new (UrlParsingSrvc::Worker)</title>
+  <meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1" />
+  <link rel="stylesheet" href="../../.././rdoc-style.css" type="text/css" media="screen" />
+</head>
+<body class="standalone-code">
+  <pre><span class="ruby-comment cmt"># File lib/url_parsing_srvc.rb, line 59</span>
+    <span class="ruby-keyword kw">def</span> <span class="ruby-identifier">initialize</span>()
+
+      <span class="ruby-constant">Signal</span>.<span class="ruby-identifier">trap</span>(<span class="ruby-value str">'HUP'</span>) {
+        <span class="ruby-ivar">@running</span> = <span class="ruby-keyword kw">false</span>
+
+        <span class="ruby-ivar">@inotify</span>.<span class="ruby-identifier">close</span>
+      }
+
+      <span class="ruby-ivar">@running</span> = <span class="ruby-keyword kw">true</span>
+
+      <span class="ruby-ivar">@inotify</span> = <span class="ruby-constant">Inotify</span>.<span class="ruby-identifier">new</span>
+
+      <span class="ruby-ivar">@key</span> = <span class="ruby-identifier">ftok</span>(<span class="ruby-identifier">$options</span>.<span class="ruby-identifier">sysv_ipc_msg_queue_path</span>, <span class="ruby-value">1</span>)
+      <span class="ruby-ivar">@msg_queue</span> = <span class="ruby-constant">MessageQueue</span>.<span class="ruby-identifier">new</span>(<span class="ruby-ivar">@key</span>, <span class="ruby-constant">IPC_CREAT</span> <span class="ruby-operator">|</span> <span class="ruby-constant">MODE</span>)
+
+      <span class="ruby-ivar">@ooo_conversion_srvc_client</span> = <span class="ruby-constant">OOoConversionSrvcClient</span>.<span class="ruby-identifier">new</span>()
+
+      <span class="ruby-ivar">@msg_text</span> = <span class="ruby-keyword kw">nil</span>
+      <span class="ruby-ivar">@mail_filename</span> = <span class="ruby-keyword kw">nil</span>
+      <span class="ruby-ivar">@recipients</span> = []
+      <span class="ruby-ivar">@links</span> = []
+      <span class="ruby-ivar">@x_count</span> = <span class="ruby-keyword kw">nil</span> <span class="ruby-comment cmt"># used inconjunction with Send_Email.rb script.</span>
+
+    <span class="ruby-keyword kw">end</span></pre>
+</body>
+</html>

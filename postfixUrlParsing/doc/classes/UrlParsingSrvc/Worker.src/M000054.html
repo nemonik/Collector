@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="iso-8859-1"?>
+<!DOCTYPE html 
+     PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+     "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+<html>
+<head>
+  <title>run (UrlParsingSrvc::Worker)</title>
+  <meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1" />
+  <link rel="stylesheet" href="../../.././rdoc-style.css" type="text/css" media="screen" />
+</head>
+<body class="standalone-code">
+  <pre><span class="ruby-comment cmt"># File lib/url_parsing_srvc.rb, line 84</span>
+    <span class="ruby-keyword kw">def</span> <span class="ruby-identifier">run</span>
+
+      <span class="ruby-ivar">@inotify</span>.<span class="ruby-identifier">add_watch</span>(<span class="ruby-identifier">$options</span>.<span class="ruby-identifier">mail_incoming_path</span>, <span class="ruby-constant">Inotify</span><span class="ruby-operator">::</span><span class="ruby-constant">MOVED_TO</span>)
+
+      <span class="ruby-ivar">@msg_queue</span>.<span class="ruby-identifier">send</span>(<span class="ruby-constant">WORKER_STATUS_MTYPE</span>, <span class="ruby-node">&quot;{\&quot;#{Process.pid}\&quot;:\&quot;idle\&quot;}&quot;</span>)
+
+      <span class="ruby-keyword kw">begin</span>
+        <span class="ruby-ivar">@inotify</span>.<span class="ruby-identifier">each_event</span> <span class="ruby-keyword kw">do</span> <span class="ruby-operator">|</span><span class="ruby-identifier">ev</span><span class="ruby-operator">|</span>
+
+          <span class="ruby-keyword kw">begin</span>
+            
+            <span class="ruby-constant">FileUtils</span>.<span class="ruby-identifier">move</span>(<span class="ruby-constant">File</span>.<span class="ruby-identifier">join</span>(<span class="ruby-identifier">$options</span>.<span class="ruby-identifier">mail_incoming_path</span>, <span class="ruby-identifier">ev</span>.<span class="ruby-identifier">name</span>), <span class="ruby-ivar">@mail_filename</span> = <span class="ruby-constant">File</span>.<span class="ruby-identifier">join</span>(<span class="ruby-identifier">$options</span>.<span class="ruby-identifier">mail_being_processed_path</span>, <span class="ruby-identifier">ev</span>.<span class="ruby-identifier">name</span>))
+
+            <span class="ruby-keyword kw">while</span> (<span class="ruby-constant">File</span>.<span class="ruby-identifier">size?</span>(<span class="ruby-ivar">@mail_filename</span>) <span class="ruby-operator">==</span> <span class="ruby-keyword kw">nil</span>) <span class="ruby-keyword kw">do</span>
+              
+            <span class="ruby-keyword kw">end</span>
+
+            <span class="ruby-ivar">@msg_text</span> = <span class="ruby-constant">IO</span>.<span class="ruby-identifier">read</span>(<span class="ruby-ivar">@mail_filename</span>)
+
+            <span class="ruby-constant">LOG</span>.<span class="ruby-identifier">debug</span>(<span class="ruby-node">&quot;PID:#{Process.pid} accepted a new connection&quot;</span>)
+            <span class="ruby-ivar">@msg_queue</span>.<span class="ruby-identifier">send</span>(<span class="ruby-constant">WORKER_STATUS_MTYPE</span>, <span class="ruby-node">&quot;{\&quot;#{Process.pid}\&quot;:\&quot;busy\&quot;}&quot;</span>)
+
+            <span class="ruby-keyword kw">if</span> (<span class="ruby-operator">!</span><span class="ruby-ivar">@msg_text</span>.<span class="ruby-identifier">nil?</span>)
+
+              <span class="ruby-constant">LOG</span>.<span class="ruby-identifier">debug</span>(<span class="ruby-value str">&quot;message not nil...&quot;</span>)
+              <span class="ruby-identifier">process_email</span>
+              <span class="ruby-comment cmt">#send_to_msg_queue if $options.send_to_amqp</span>
+              <span class="ruby-identifier">defer_links_to_outgoing_amqp_msgs_folder</span> <span class="ruby-keyword kw">if</span> <span class="ruby-identifier">$options</span>.<span class="ruby-identifier">send_to_amqp</span>
+              <span class="ruby-identifier">free</span>
+            <span class="ruby-keyword kw">end</span>
+
+            <span class="ruby-keyword kw">if</span> <span class="ruby-operator">!</span><span class="ruby-ivar">@running</span>
+              <span class="ruby-keyword kw">break</span>
+            <span class="ruby-keyword kw">end</span>
+
+          <span class="ruby-keyword kw">rescue</span> <span class="ruby-constant">Errno</span><span class="ruby-operator">::</span><span class="ruby-constant">ENOENT</span>
+            <span class="ruby-comment cmt"># swallow, another process grabbed the mail file to handle...</span>
+          <span class="ruby-keyword kw">rescue</span> <span class="ruby-constant">Exception</span> =<span class="ruby-operator">&gt;</span> <span class="ruby-identifier">e</span>
+            <span class="ruby-constant">LOG</span>.<span class="ruby-identifier">error</span>(<span class="ruby-node">&quot;#{e.class} : '#{e.message}\n#{e.backtrace.join(&quot;\n&quot;)}&quot;</span>)
+          <span class="ruby-keyword kw">ensure</span>
+            <span class="ruby-ivar">@msg_queue</span>.<span class="ruby-identifier">send</span>(<span class="ruby-constant">WORKER_STATUS_MTYPE</span>, <span class="ruby-node">&quot;{\&quot;#{Process.pid}\&quot;:\&quot;idle\&quot;}&quot;</span>)
+          <span class="ruby-keyword kw">end</span>
+
+          <span class="ruby-constant">LOG</span>.<span class="ruby-identifier">debug</span>(<span class="ruby-value str">&quot;back to waiting to be notified&quot;</span>)
+
+        <span class="ruby-keyword kw">end</span>
+      <span class="ruby-keyword kw">rescue</span> <span class="ruby-constant">Errno</span><span class="ruby-operator">::</span><span class="ruby-constant">EBADF</span>
+        <span class="ruby-comment cmt"># swallow, process recieved HUP signal</span>
+      <span class="ruby-keyword kw">end</span>
+
+      <span class="ruby-identifier">puts</span>(<span class="ruby-node">&quot;#{Process.pid} expiring...&quot;</span>)
+      <span class="ruby-identifier">exit</span>
+    <span class="ruby-keyword kw">end</span></pre>
+</body>
+</html>

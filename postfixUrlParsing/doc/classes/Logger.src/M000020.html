@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="iso-8859-1"?>
+<!DOCTYPE html 
+     PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+     "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+<html>
+<head>
+  <title>add (Logger)</title>
+  <meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1" />
+  <link rel="stylesheet" href="../.././rdoc-style.css" type="text/css" media="screen" />
+</head>
+<body class="standalone-code">
+  <pre><span class="ruby-comment cmt"># File lib/logger_patch.rb, line 20</span>
+  <span class="ruby-keyword kw">def</span> <span class="ruby-identifier">add</span>(<span class="ruby-identifier">severity</span>, <span class="ruby-identifier">message</span> = <span class="ruby-keyword kw">nil</span>, <span class="ruby-identifier">progname</span> = <span class="ruby-keyword kw">nil</span>, <span class="ruby-operator">&amp;</span><span class="ruby-identifier">block</span>)
+
+    <span class="ruby-identifier">file_name</span> = <span class="ruby-value str">''</span>
+    <span class="ruby-identifier">line</span> = <span class="ruby-value str">''</span>
+
+    <span class="ruby-keyword kw">if</span> <span class="ruby-regexp re">/^(.+?):(\d+)(?::in `(.*)')?/</span> <span class="ruby-operator">=~</span> <span class="ruby-identifier">caller</span>(<span class="ruby-value">3</span>).<span class="ruby-identifier">first</span>
+      <span class="ruby-identifier">file_name</span> = <span class="ruby-constant">File</span>.<span class="ruby-identifier">basename</span>(<span class="ruby-constant">Regexp</span>.<span class="ruby-identifier">last_match</span>[<span class="ruby-value">1</span>])
+      <span class="ruby-identifier">line</span> = <span class="ruby-constant">Regexp</span>.<span class="ruby-identifier">last_match</span>[<span class="ruby-value">2</span>].<span class="ruby-identifier">to_i</span>
+    <span class="ruby-keyword kw">end</span>
+
+    <span class="ruby-identifier">progname</span> = <span class="ruby-node">&quot;(#{file_name} - #{line}): #{progname}&quot;</span>
+    <span class="ruby-identifier">progname</span> = <span class="ruby-identifier">progname</span>.<span class="ruby-identifier">red</span> <span class="ruby-keyword kw">if</span> <span class="ruby-identifier">severity</span> <span class="ruby-operator">==</span> <span class="ruby-constant">ERROR</span>
+    <span class="ruby-identifier">progname</span> = <span class="ruby-identifier">progname</span>.<span class="ruby-identifier">yellow</span> <span class="ruby-keyword kw">if</span> <span class="ruby-identifier">severity</span> <span class="ruby-operator">==</span> <span class="ruby-constant">WARN</span>
+
+    <span class="ruby-identifier">original_add</span>(<span class="ruby-identifier">severity</span>, <span class="ruby-identifier">message</span>, <span class="ruby-identifier">progname</span>, <span class="ruby-operator">&amp;</span><span class="ruby-identifier">block</span>)
+  <span class="ruby-keyword kw">end</span></pre>
+</body>
+</html>

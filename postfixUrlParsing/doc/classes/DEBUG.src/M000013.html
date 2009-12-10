@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="iso-8859-1"?>
+<!DOCTYPE html 
+     PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+     "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+<html>
+<head>
+  <title>run (DEBUG)</title>
+  <meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1" />
+  <link rel="stylesheet" href="../.././rdoc-style.css" type="text/css" media="screen" />
+</head>
+<body class="standalone-code">
+  <pre><span class="ruby-comment cmt"># File test/debug.rb, line 39</span>
+  <span class="ruby-keyword kw">def</span> <span class="ruby-identifier">run</span>
+    <span class="ruby-keyword kw">if</span> <span class="ruby-identifier">parsed_options?</span>
+      <span class="ruby-keyword kw">if</span> <span class="ruby-identifier">arguments_valid?</span>              
+        <span class="ruby-identifier">output_options</span>                                      
+        <span class="ruby-identifier">process_arguments</span>
+
+        <span class="ruby-identifier">puts</span> <span class="ruby-value str">'starting'</span>
+        <span class="ruby-comment cmt"># read JSON message off AMQP exchange/queue</span>
+        <span class="ruby-constant">EM</span>.<span class="ruby-identifier">run</span> <span class="ruby-keyword kw">do</span>
+          <span class="ruby-identifier">connection</span> = <span class="ruby-constant">AMQP</span>.<span class="ruby-identifier">connect</span>(<span class="ruby-identifier">:host</span> =<span class="ruby-operator">&gt;</span> <span class="ruby-ivar">@options</span>.<span class="ruby-identifier">amqp_host</span>, <span class="ruby-identifier">:port</span> =<span class="ruby-operator">&gt;</span> <span class="ruby-ivar">@options</span>.<span class="ruby-identifier">amqp_port</span>,
+                                    <span class="ruby-identifier">:user</span> =<span class="ruby-operator">&gt;</span> <span class="ruby-ivar">@options</span>.<span class="ruby-identifier">amqp_user</span>, <span class="ruby-identifier">:pass</span> =<span class="ruby-operator">&gt;</span> <span class="ruby-ivar">@options</span>.<span class="ruby-identifier">amqp_password</span>,
+                                    <span class="ruby-identifier">:vhost</span> =<span class="ruby-operator">&gt;</span> <span class="ruby-ivar">@options</span>.<span class="ruby-identifier">amqp_vhost</span>, <span class="ruby-identifier">:logging</span> =<span class="ruby-operator">&gt;</span> <span class="ruby-keyword kw">false</span>)                                                        
+ 
+          <span class="ruby-identifier">channel</span> = <span class="ruby-constant">MQ</span>.<span class="ruby-identifier">new</span>(<span class="ruby-identifier">connection</span>)
+          <span class="ruby-identifier">exchange</span> = <span class="ruby-constant">MQ</span><span class="ruby-operator">::</span><span class="ruby-constant">Exchange</span>.<span class="ruby-identifier">new</span>(<span class="ruby-identifier">channel</span>, <span class="ruby-identifier">:topic</span>, <span class="ruby-ivar">@options</span>.<span class="ruby-identifier">amqp_exchange</span>,
+                                      {<span class="ruby-identifier">:passive</span> =<span class="ruby-operator">&gt;</span> <span class="ruby-keyword kw">false</span>, <span class="ruby-identifier">:durable</span> =<span class="ruby-operator">&gt;</span> <span class="ruby-keyword kw">true</span>,
+                                       <span class="ruby-identifier">:auto_delete</span> =<span class="ruby-operator">&gt;</span> <span class="ruby-keyword kw">false</span>, <span class="ruby-identifier">:internal</span> =<span class="ruby-operator">&gt;</span> <span class="ruby-keyword kw">false</span>,
+                                       <span class="ruby-identifier">:nowait</span> =<span class="ruby-operator">&gt;</span> <span class="ruby-keyword kw">false</span>})
+
+          <span class="ruby-identifier">queue</span> = <span class="ruby-constant">MQ</span><span class="ruby-operator">::</span><span class="ruby-constant">Queue</span>.<span class="ruby-identifier">new</span>(<span class="ruby-identifier">channel</span>, <span class="ruby-value str">'debug'</span>, {<span class="ruby-identifier">:durable</span> =<span class="ruby-operator">&gt;</span> <span class="ruby-keyword kw">false</span>, <span class="ruby-identifier">:auto_delete</span> =<span class="ruby-operator">&gt;</span> <span class="ruby-keyword kw">true</span>})
+          <span class="ruby-identifier">queue</span>.<span class="ruby-identifier">bind</span>(<span class="ruby-identifier">exchange</span>, <span class="ruby-identifier">:key</span> =<span class="ruby-operator">&gt;</span> <span class="ruby-ivar">@options</span>.<span class="ruby-identifier">amqp_routing_key</span>) 
+        
+          <span class="ruby-identifier">queue</span>.<span class="ruby-identifier">subscribe</span>(<span class="ruby-identifier">:ack</span> =<span class="ruby-operator">&gt;</span> <span class="ruby-keyword kw">true</span>, <span class="ruby-identifier">:nowait</span> =<span class="ruby-operator">&gt;</span> <span class="ruby-keyword kw">false</span>) <span class="ruby-keyword kw">do</span> <span class="ruby-operator">|</span><span class="ruby-identifier">header</span>, <span class="ruby-identifier">msg</span><span class="ruby-operator">|</span>
+            <span class="ruby-identifier">header</span>.<span class="ruby-identifier">ack</span>
+            <span class="ruby-identifier">puts</span> <span class="ruby-value str">'==============================================================================='</span>          
+            <span class="ruby-identifier">pp</span> <span class="ruby-identifier">header</span>
+            <span class="ruby-identifier">puts</span> <span class="ruby-value str">'==============================================================================='</span>                      
+            <span class="ruby-identifier">puts</span> <span class="ruby-identifier">msg</span>
+            <span class="ruby-identifier">puts</span> <span class="ruby-value str">'-------------------------------------------------------------------------------'</span>            
+          <span class="ruby-keyword kw">end</span>
+        
+        <span class="ruby-keyword kw">end</span>
+        
+      <span class="ruby-keyword kw">end</span>    
+    <span class="ruby-keyword kw">end</span>
+  <span class="ruby-keyword kw">rescue</span> <span class="ruby-constant">Interrupt</span> =<span class="ruby-operator">&gt;</span> <span class="ruby-identifier">e</span>
+    <span class="ruby-identifier">puts</span>(<span class="ruby-value str">&quot;Debugger exiting...&quot;</span>)
+    <span class="ruby-constant">SystemExit</span>.<span class="ruby-identifier">new</span>(<span class="ruby-value">0</span>)
+  <span class="ruby-keyword kw">end</span></pre>
+</body>
+</html>

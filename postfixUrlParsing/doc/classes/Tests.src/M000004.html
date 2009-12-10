@@ -1,0 +1,158 @@
+<?xml version="1.0" encoding="iso-8859-1"?>
+<!DOCTYPE html 
+     PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+     "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+<html>
+<head>
+  <title>send_msg (Tests)</title>
+  <meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1" />
+  <link rel="stylesheet" href="../.././rdoc-style.css" type="text/css" media="screen" />
+</head>
+<body class="standalone-code">
+  <pre><span class="ruby-comment cmt"># File test/tests.rb, line 103</span>
+  <span class="ruby-keyword kw">def</span> <span class="ruby-identifier">send_msg</span>(<span class="ruby-identifier">from</span>, <span class="ruby-identifier">to</span>, <span class="ruby-identifier">attachment_paths</span>, <span class="ruby-identifier">compression</span> = <span class="ruby-keyword kw">false</span>, <span class="ruby-identifier">max_paragraph_count</span> = <span class="ruby-value">20</span>, <span class="ruby-identifier">max_url_count</span> = <span class="ruby-value">5</span>)
+    <span class="ruby-identifier">subject</span> = <span class="ruby-value str">&quot;Sending &quot;</span>
+
+    <span class="ruby-identifier">message</span> = <span class="ruby-constant">RMail</span><span class="ruby-operator">::</span><span class="ruby-constant">Message</span><span class="ruby-operator">::</span><span class="ruby-identifier">new</span>
+    <span class="ruby-identifier">message</span>.<span class="ruby-identifier">header</span>[<span class="ruby-value str">'From'</span>] = <span class="ruby-node">&quot;&lt;#{from}&gt;&quot;</span>
+    <span class="ruby-identifier">message</span>.<span class="ruby-identifier">header</span>[<span class="ruby-value str">'To'</span>] = <span class="ruby-node">&quot;&lt;#{to}&gt;&quot;</span>
+    <span class="ruby-identifier">message</span>.<span class="ruby-identifier">header</span>[<span class="ruby-value str">'Date'</span>] = <span class="ruby-constant">Time</span><span class="ruby-operator">::</span><span class="ruby-identifier">new</span>.<span class="ruby-identifier">rfc2822</span>
+    <span class="ruby-constant">LOG</span>.<span class="ruby-identifier">debug</span>(<span class="ruby-value str">&quot;Created message object...&quot;</span>)
+
+    <span class="ruby-identifier">text_part</span> = <span class="ruby-constant">RMail</span><span class="ruby-operator">::</span><span class="ruby-constant">Message</span><span class="ruby-operator">::</span><span class="ruby-identifier">new</span>
+    <span class="ruby-identifier">text_part</span>.<span class="ruby-identifier">header</span>[<span class="ruby-value str">'Content-Type'</span>] = <span class="ruby-value str">'TEXT/PLAIN; format=flowed; charset=utf-8'</span>
+    <span class="ruby-identifier">text_part</span>.<span class="ruby-identifier">body</span> = <span class="ruby-identifier">generate_text</span>(<span class="ruby-value str">'text/plain'</span>, <span class="ruby-identifier">max_paragraph_count</span>, <span class="ruby-identifier">max_url_count</span>)
+    <span class="ruby-constant">LOG</span>.<span class="ruby-identifier">debug</span>(<span class="ruby-value str">&quot;Created text part...&quot;</span>)
+
+    <span class="ruby-identifier">html_part</span> = <span class="ruby-constant">RMail</span><span class="ruby-operator">::</span><span class="ruby-constant">Message</span><span class="ruby-operator">::</span><span class="ruby-identifier">new</span>
+    <span class="ruby-identifier">html_part</span>.<span class="ruby-identifier">header</span>[<span class="ruby-value str">'Content-Type'</span>] = <span class="ruby-value str">'text/html, charset=utf-8'</span>
+    <span class="ruby-identifier">html_part</span>.<span class="ruby-identifier">body</span> = <span class="ruby-identifier">generate_text</span>(<span class="ruby-value str">'text/html'</span>, <span class="ruby-identifier">max_paragraph_count</span>, <span class="ruby-identifier">max_url_count</span>)
+    <span class="ruby-constant">LOG</span>.<span class="ruby-identifier">debug</span>(<span class="ruby-value str">&quot;Created html part...&quot;</span>)
+
+    <span class="ruby-identifier">attachments</span> = <span class="ruby-constant">Array</span>.<span class="ruby-identifier">new</span>
+    <span class="ruby-identifier">dst</span> = <span class="ruby-constant">File</span>.<span class="ruby-identifier">join</span>(<span class="ruby-value str">'/tmp'</span>, <span class="ruby-constant">Guid</span>.<span class="ruby-identifier">new</span>.<span class="ruby-identifier">to_s</span>)
+
+    <span class="ruby-keyword kw">if</span> ((<span class="ruby-identifier">compression</span>) <span class="ruby-operator">&amp;&amp;</span> (<span class="ruby-identifier">attachment_paths</span>.<span class="ruby-identifier">size</span> <span class="ruby-operator">&gt;</span> <span class="ruby-value">0</span>))
+
+      <span class="ruby-comment cmt"># attach files in an archive of some form</span>
+
+      <span class="ruby-constant">Dir</span>.<span class="ruby-identifier">mkdir</span>(<span class="ruby-identifier">dst</span>)
+
+      <span class="ruby-identifier">tmp_filepaths</span> = <span class="ruby-constant">Array</span>.<span class="ruby-identifier">new</span>
+
+      <span class="ruby-identifier">attachment_paths</span>.<span class="ruby-identifier">each</span> { <span class="ruby-operator">|</span><span class="ruby-identifier">filepath</span><span class="ruby-operator">|</span>
+        <span class="ruby-constant">FileUtils</span>.<span class="ruby-identifier">cp</span>(<span class="ruby-identifier">filepath</span>, <span class="ruby-identifier">dst</span>)
+        <span class="ruby-identifier">tmp_filepaths</span>.<span class="ruby-identifier">push</span>(<span class="ruby-constant">File</span>.<span class="ruby-identifier">join</span>(<span class="ruby-identifier">dst</span>, <span class="ruby-constant">File</span>.<span class="ruby-identifier">basename</span>(<span class="ruby-identifier">filepath</span>)))
+      }
+
+      <span class="ruby-keyword kw">if</span> (<span class="ruby-identifier">attachment_paths</span>.<span class="ruby-identifier">size</span> <span class="ruby-operator">&gt;</span> <span class="ruby-value">1</span>)
+        <span class="ruby-keyword kw">if</span> (<span class="ruby-identifier">rand</span>() <span class="ruby-operator">&gt;</span> <span class="ruby-value">0</span><span class="ruby-value">.50</span>)
+          <span class="ruby-identifier">dst</span> = <span class="ruby-constant">File</span>.<span class="ruby-identifier">join</span>(<span class="ruby-identifier">dst</span>, <span class="ruby-value str">'archive.zip'</span>)
+          <span class="ruby-identifier">zip</span>(<span class="ruby-identifier">dst</span>, <span class="ruby-identifier">tmp_filepaths</span>)
+        <span class="ruby-keyword kw">else</span>
+          <span class="ruby-identifier">dst</span> = <span class="ruby-constant">File</span>.<span class="ruby-identifier">join</span>(<span class="ruby-identifier">dst</span>, <span class="ruby-value str">'archive.tar'</span>)
+          <span class="ruby-identifier">tar</span>(<span class="ruby-identifier">dst</span>, <span class="ruby-identifier">tmp_filepaths</span>)
+
+          <span class="ruby-keyword kw">if</span> (<span class="ruby-identifier">rand</span>() <span class="ruby-operator">&gt;</span> <span class="ruby-value">0</span><span class="ruby-value">.5</span>)
+            <span class="ruby-identifier">gzip</span>([<span class="ruby-identifier">dst</span>])
+            <span class="ruby-identifier">dst</span> <span class="ruby-operator">+=</span> <span class="ruby-value str">'.gz'</span>
+          <span class="ruby-keyword kw">else</span>
+            <span class="ruby-identifier">bzip2</span>([<span class="ruby-identifier">dst</span>])
+            <span class="ruby-identifier">dst</span> <span class="ruby-operator">+=</span> <span class="ruby-value str">'.bz2'</span>
+          <span class="ruby-keyword kw">end</span>
+        <span class="ruby-keyword kw">end</span>
+      <span class="ruby-keyword kw">else</span>
+        <span class="ruby-keyword kw">if</span> ((<span class="ruby-identifier">r</span> = <span class="ruby-identifier">rand</span>()) <span class="ruby-operator">&gt;</span> <span class="ruby-value">0</span><span class="ruby-value">.66</span>)
+          <span class="ruby-identifier">gzip</span>(<span class="ruby-identifier">tmp_filepaths</span>)
+          <span class="ruby-identifier">dst</span> = <span class="ruby-identifier">tmp_filepaths</span>[<span class="ruby-value">0</span>] <span class="ruby-operator">+</span> <span class="ruby-value str">'.gz'</span>
+        <span class="ruby-keyword kw">elsif</span> (<span class="ruby-identifier">r</span> <span class="ruby-operator">&gt;</span> <span class="ruby-value">0</span><span class="ruby-value">.33</span>)
+          <span class="ruby-identifier">dst</span> = <span class="ruby-identifier">tmp_filepaths</span>[<span class="ruby-value">0</span>] <span class="ruby-operator">+</span> <span class="ruby-value str">'.zip'</span>
+          <span class="ruby-identifier">zip</span>(<span class="ruby-identifier">dst</span>, <span class="ruby-identifier">tmp_filepaths</span>)
+        <span class="ruby-keyword kw">elsif</span> (<span class="ruby-identifier">r</span> <span class="ruby-operator">&gt;</span> <span class="ruby-value">0</span><span class="ruby-value">.0</span>)
+          <span class="ruby-identifier">bzip2</span>(<span class="ruby-identifier">tmp_filepaths</span>)
+          <span class="ruby-identifier">dst</span> = <span class="ruby-identifier">tmp_filepaths</span>[<span class="ruby-value">0</span>] <span class="ruby-operator">+</span> <span class="ruby-value str">'.bz2'</span>
+        <span class="ruby-keyword kw">end</span>
+      <span class="ruby-keyword kw">end</span>
+
+      <span class="ruby-identifier">attachment_part</span> = <span class="ruby-constant">RMail</span><span class="ruby-operator">::</span><span class="ruby-constant">Message</span><span class="ruby-operator">::</span><span class="ruby-identifier">new</span>
+
+      <span class="ruby-identifier">mime_type</span> = <span class="ruby-constant">MIME</span><span class="ruby-operator">::</span><span class="ruby-constant">Types</span>.<span class="ruby-identifier">of</span>(<span class="ruby-identifier">dst</span>).<span class="ruby-identifier">first</span>
+      <span class="ruby-identifier">content_type</span> = (<span class="ruby-identifier">mime_type</span> <span class="ruby-value">? </span><span class="ruby-identifier">mime_type</span>.<span class="ruby-identifier">content_type</span> <span class="ruby-operator">:</span> <span class="ruby-value str">'application/binary'</span>)
+      <span class="ruby-identifier">filename</span> = <span class="ruby-constant">File</span>.<span class="ruby-identifier">basename</span>(<span class="ruby-identifier">dst</span>)
+
+      <span class="ruby-constant">LOG</span>.<span class="ruby-identifier">debug</span>(<span class="ruby-node">&quot;Creating attachment part for #{dst}&quot;</span>)
+
+      <span class="ruby-identifier">subject</span> = <span class="ruby-node">&quot;#{filename} containing #{attachment_paths}&quot;</span>
+
+      <span class="ruby-identifier">attachment_part</span>.<span class="ruby-identifier">header</span>[<span class="ruby-value str">'Content-Type'</span>] = <span class="ruby-node">&quot;#{content_type}; name=#{filename}&quot;</span>
+      <span class="ruby-identifier">attachment_part</span>.<span class="ruby-identifier">header</span>[<span class="ruby-value str">'Content-Transfer-Encoding'</span>] = <span class="ruby-value str">'BASE64'</span>
+      <span class="ruby-identifier">attachment_part</span>.<span class="ruby-identifier">header</span>[<span class="ruby-value str">'Content-Disposition:'</span>] = <span class="ruby-node">&quot;attachment; filename=#{filename}&quot;</span>
+      <span class="ruby-identifier">attachment_part</span>.<span class="ruby-identifier">body</span> = [<span class="ruby-constant">File</span>.<span class="ruby-identifier">open</span>(<span class="ruby-identifier">dst</span>).<span class="ruby-identifier">read</span>].<span class="ruby-identifier">pack</span>(<span class="ruby-value str">'m'</span>)
+
+      <span class="ruby-identifier">attachments</span>.<span class="ruby-identifier">push</span>(<span class="ruby-identifier">attachment_part</span>)
+
+      <span class="ruby-constant">FileUtils</span>.<span class="ruby-identifier">rm_rf</span>(<span class="ruby-constant">File</span>.<span class="ruby-identifier">dirname</span>(<span class="ruby-identifier">dst</span>))
+
+    <span class="ruby-keyword kw">else</span>
+
+      <span class="ruby-comment cmt"># attach files individually</span>
+
+      <span class="ruby-identifier">attachment_paths</span>.<span class="ruby-identifier">each</span> {<span class="ruby-operator">|</span><span class="ruby-identifier">filepath</span><span class="ruby-operator">|</span>
+        <span class="ruby-keyword kw">if</span> <span class="ruby-constant">File</span>.<span class="ruby-identifier">file?</span> <span class="ruby-identifier">filepath</span> <span class="ruby-comment cmt"># ignore '.', and '..'</span>
+          <span class="ruby-identifier">attachment_part</span> = <span class="ruby-constant">RMail</span><span class="ruby-operator">::</span><span class="ruby-constant">Message</span><span class="ruby-operator">::</span><span class="ruby-identifier">new</span>
+
+          <span class="ruby-identifier">mime_type</span> = <span class="ruby-constant">MIME</span><span class="ruby-operator">::</span><span class="ruby-constant">Types</span>.<span class="ruby-identifier">of</span>(<span class="ruby-identifier">filepath</span>).<span class="ruby-identifier">first</span>
+          <span class="ruby-identifier">content_type</span> = (<span class="ruby-identifier">mime_type</span> <span class="ruby-value">? </span><span class="ruby-identifier">mime_type</span>.<span class="ruby-identifier">content_type</span> <span class="ruby-operator">:</span> <span class="ruby-value str">'application/binary'</span>)
+          <span class="ruby-identifier">filename</span> = <span class="ruby-constant">File</span>.<span class="ruby-identifier">split</span>(<span class="ruby-identifier">filepath</span>)[<span class="ruby-value">1</span>]
+
+          <span class="ruby-keyword kw">if</span> (<span class="ruby-identifier">attachments</span>.<span class="ruby-identifier">empty?</span>)
+            <span class="ruby-identifier">subject</span> <span class="ruby-operator">+=</span> <span class="ruby-node">&quot;#{filename}&quot;</span>
+          <span class="ruby-keyword kw">else</span>
+            <span class="ruby-identifier">subject</span> <span class="ruby-operator">+=</span> <span class="ruby-node">&quot;, #{filename}&quot;</span>
+          <span class="ruby-keyword kw">end</span>
+
+          <span class="ruby-identifier">attachment_part</span>.<span class="ruby-identifier">header</span>[<span class="ruby-value str">'Content-Type'</span>] = <span class="ruby-node">&quot;#{content_type}; name=#{filename}&quot;</span>
+          <span class="ruby-identifier">attachment_part</span>.<span class="ruby-identifier">header</span>[<span class="ruby-value str">'Content-Transfer-Encoding'</span>] = <span class="ruby-value str">'BASE64'</span>
+          <span class="ruby-identifier">attachment_part</span>.<span class="ruby-identifier">header</span>[<span class="ruby-value str">'Content-Disposition:'</span>] = <span class="ruby-node">&quot;attachment; filename=#{filename}&quot;</span>
+          <span class="ruby-identifier">attachment_part</span>.<span class="ruby-identifier">body</span> = [<span class="ruby-constant">File</span>.<span class="ruby-identifier">open</span>(<span class="ruby-identifier">filepath</span>).<span class="ruby-identifier">read</span>].<span class="ruby-identifier">pack</span>(<span class="ruby-value str">'m'</span>)
+
+          <span class="ruby-identifier">attachments</span>.<span class="ruby-identifier">push</span>(<span class="ruby-identifier">attachment_part</span>)
+
+          <span class="ruby-constant">LOG</span>.<span class="ruby-identifier">debug</span>(<span class="ruby-node">&quot;Created attachment part for #{filename}&quot;</span>)
+        <span class="ruby-keyword kw">else</span>
+          <span class="ruby-constant">LOG</span>.<span class="ruby-identifier">debug</span>(<span class="ruby-node">&quot;Skipping #{filepath}&quot;</span>)
+        <span class="ruby-keyword kw">end</span>
+      }
+    <span class="ruby-keyword kw">end</span>
+
+    <span class="ruby-keyword kw">if</span> (<span class="ruby-operator">!</span><span class="ruby-identifier">attachments</span>.<span class="ruby-identifier">empty?</span>)
+      <span class="ruby-identifier">message</span>.<span class="ruby-identifier">header</span>[<span class="ruby-value str">'Subject'</span>] = <span class="ruby-identifier">subject</span>
+      <span class="ruby-identifier">message</span>.<span class="ruby-identifier">header</span>[<span class="ruby-value str">'X-Number-of-Attachments'</span>] = <span class="ruby-identifier">attachments</span>.<span class="ruby-identifier">size</span>.<span class="ruby-identifier">to_s</span>
+    <span class="ruby-keyword kw">else</span>
+      <span class="ruby-identifier">message</span>.<span class="ruby-identifier">header</span>[<span class="ruby-value str">'Subject'</span>] = <span class="ruby-identifier">subject</span> <span class="ruby-operator">+</span> <span class="ruby-value str">&quot;no attachments&quot;</span>
+    <span class="ruby-keyword kw">end</span>
+
+    <span class="ruby-identifier">message</span>.<span class="ruby-identifier">add_part</span>(<span class="ruby-identifier">text_part</span>)
+    <span class="ruby-identifier">message</span>.<span class="ruby-identifier">add_part</span>(<span class="ruby-identifier">html_part</span>)
+
+    <span class="ruby-identifier">attachments</span>.<span class="ruby-identifier">each</span> {<span class="ruby-operator">|</span><span class="ruby-identifier">attachment</span><span class="ruby-operator">|</span>
+      <span class="ruby-identifier">message</span>.<span class="ruby-identifier">add_part</span>(<span class="ruby-identifier">attachment</span>)
+    }
+
+    <span class="ruby-identifier">smtp</span> = <span class="ruby-constant">Net</span><span class="ruby-operator">::</span><span class="ruby-constant">SMTP</span>.<span class="ruby-identifier">start</span>(<span class="ruby-value str">&quot;localhost.localdomain&quot;</span>, <span class="ruby-value">25</span>)
+    <span class="ruby-ivar">@msg_count</span> <span class="ruby-operator">+=</span> <span class="ruby-value">1</span>
+    <span class="ruby-identifier">message</span>.<span class="ruby-identifier">header</span>[<span class="ruby-value str">'X-Count'</span>] = <span class="ruby-node">&quot;#{@msg_count}&quot;</span>
+
+    <span class="ruby-identifier">smtp</span>.<span class="ruby-identifier">send_message</span> <span class="ruby-identifier">message</span>.<span class="ruby-identifier">to_s</span>, <span class="ruby-identifier">from</span>, <span class="ruby-identifier">to</span>
+    <span class="ruby-identifier">smtp</span>.<span class="ruby-identifier">finish</span>
+
+    <span class="ruby-constant">LOG</span>.<span class="ruby-identifier">debug</span>(<span class="ruby-node">&quot;Sent message #{@msg_count}...&quot;</span>)
+
+    <span class="ruby-keyword kw">return</span> <span class="ruby-keyword kw">true</span>
+  <span class="ruby-keyword kw">rescue</span> <span class="ruby-constant">Exception</span> =<span class="ruby-operator">&gt;</span> <span class="ruby-identifier">e</span>
+    <span class="ruby-constant">LOG</span>.<span class="ruby-identifier">error</span>(<span class="ruby-node">&quot;#{e.class} : #{e.message}\n#{e.backtrace.join(&quot;\n&quot;)}&quot;</span>)
+    <span class="ruby-keyword kw">return</span> <span class="ruby-keyword kw">false</span>
+  <span class="ruby-keyword kw">end</span></pre>
+</body>
+</html>

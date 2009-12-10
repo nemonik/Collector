@@ -1,0 +1,168 @@
+<?xml version="1.0" encoding="iso-8859-1"?>
+<!DOCTYPE html 
+     PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+     "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+<html>
+<head>
+  <title>run (PostfixUrlDaemon)</title>
+  <meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1" />
+  <link rel="stylesheet" href="../.././rdoc-style.css" type="text/css" media="screen" />
+</head>
+<body class="standalone-code">
+  <pre><span class="ruby-comment cmt"># File lib/postfix_url_daemon.rb, line 728</span>
+  <span class="ruby-keyword kw">def</span> <span class="ruby-identifier">run</span>
+    <span class="ruby-identifier">throttle_amqp_sends</span>
+
+    <span class="ruby-identifier">mutex</span> = <span class="ruby-constant">Mutex</span>.<span class="ruby-identifier">new</span>
+
+    <span class="ruby-identifier">$pool</span> = <span class="ruby-constant">ThreadPool</span>.<span class="ruby-identifier">new</span>(<span class="ruby-ivar">@log</span>, <span class="ruby-identifier">$options</span>.<span class="ruby-identifier">workers</span>)
+
+    <span class="ruby-ivar">@log</span>.<span class="ruby-identifier">info</span>(<span class="ruby-node">&quot;Running HoneyClient POSTFIX URL daemon on #{$options.port}...&quot;</span>)
+
+    <span class="ruby-identifier">server</span> = <span class="ruby-constant">TCPServer</span>.<span class="ruby-identifier">open</span>(<span class="ruby-identifier">$options</span>.<span class="ruby-identifier">port</span>)
+    <span class="ruby-identifier">server_hostname</span> = <span class="ruby-constant">Socket</span>.<span class="ruby-identifier">gethostname</span>
+
+    <span class="ruby-identifier">shutdown</span> = <span class="ruby-keyword kw">false</span>
+    <span class="ruby-identifier">connections</span> = <span class="ruby-value">1</span>
+
+    <span class="ruby-constant">Thread</span>.<span class="ruby-identifier">abort_on_exception</span>=<span class="ruby-keyword kw">true</span>
+
+    <span class="ruby-keyword kw">until</span> (<span class="ruby-identifier">shutdown</span> <span class="ruby-operator">!=</span> <span class="ruby-keyword kw">false</span>)
+      <span class="ruby-ivar">@log</span>.<span class="ruby-identifier">debug</span>(<span class="ruby-value str">&quot;listening...&quot;</span>)
+
+      <span class="ruby-constant">Thread</span>.<span class="ruby-identifier">start</span>(<span class="ruby-identifier">server</span>.<span class="ruby-identifier">accept</span>) <span class="ruby-keyword kw">do</span> <span class="ruby-operator">|</span><span class="ruby-identifier">socket</span><span class="ruby-operator">|</span>
+
+        <span class="ruby-keyword kw">begin</span>
+          <span class="ruby-identifier">mutex</span>.<span class="ruby-identifier">synchronize</span> { <span class="ruby-identifier">connections</span> <span class="ruby-operator">+=</span> <span class="ruby-value">1</span> }
+
+          <span class="ruby-identifier">puts</span> <span class="ruby-node">&quot;Handling connection from #{socket.peeraddr[2]}:#{socket.peeraddr[1]}...\n&quot;</span>
+
+          <span class="ruby-keyword kw">if</span> (<span class="ruby-identifier">socket</span>.<span class="ruby-identifier">peeraddr</span>[<span class="ruby-value">2</span>].<span class="ruby-identifier">match</span>(<span class="ruby-identifier">server_hostname</span>))
+
+            <span class="ruby-identifier">text</span> = <span class="ruby-identifier">socket</span>.<span class="ruby-identifier">read</span> <span class="ruby-keyword kw">if</span> <span class="ruby-keyword kw">not</span> <span class="ruby-identifier">socket</span>.<span class="ruby-identifier">closed?</span>
+            
+            <span class="ruby-keyword kw">if</span> (<span class="ruby-identifier">text</span>.<span class="ruby-identifier">match</span>(<span class="ruby-regexp re">/^From/</span>))
+
+              <span class="ruby-identifier">socket</span>.<span class="ruby-identifier">close</span> <span class="ruby-keyword kw">if</span> <span class="ruby-keyword kw">not</span> <span class="ruby-identifier">socket</span>.<span class="ruby-identifier">closed?</span>
+
+              <span class="ruby-ivar">@log</span>.<span class="ruby-identifier">debug</span>(<span class="ruby-value str">&quot;Processing email, getting worker...&quot;</span>)
+
+              <span class="ruby-identifier">socket</span>.<span class="ruby-identifier">close</span> <span class="ruby-keyword kw">if</span> <span class="ruby-keyword kw">not</span> <span class="ruby-identifier">socket</span>.<span class="ruby-identifier">closed?</span>
+
+              <span class="ruby-identifier">worker</span> = <span class="ruby-identifier">$pool</span>.<span class="ruby-identifier">get_worker</span>
+
+              <span class="ruby-ivar">@log</span>.<span class="ruby-identifier">debug</span>(<span class="ruby-value str">&quot;Running worker... &quot;</span>)
+
+              <span class="ruby-identifier">worker</span>.<span class="ruby-identifier">run</span>(<span class="ruby-identifier">text</span>)
+
+              <span class="ruby-ivar">@log</span>.<span class="ruby-identifier">debug</span>(<span class="ruby-value str">&quot;Leaving to pick up another connection...&quot;</span>)
+
+            <span class="ruby-keyword kw">elsif</span> (<span class="ruby-identifier">text</span>.<span class="ruby-identifier">match</span>(<span class="ruby-regexp re">/^shutdown/i</span>))
+
+              <span class="ruby-ivar">@log</span>.<span class="ruby-identifier">debug</span>(<span class="ruby-value str">&quot;Recieved shutdown command...&quot;</span>)
+
+              <span class="ruby-identifier">socket</span>.<span class="ruby-identifier">write</span>(<span class="ruby-value str">&quot;Shutting down...&quot;</span>)
+              <span class="ruby-identifier">socket</span>.<span class="ruby-identifier">flush</span>
+
+              <span class="ruby-identifier">socket</span>.<span class="ruby-identifier">close</span> <span class="ruby-keyword kw">if</span> <span class="ruby-keyword kw">not</span> <span class="ruby-identifier">socket</span>.<span class="ruby-identifier">closed?</span>
+
+              <span class="ruby-identifier">shutdown</span> = <span class="ruby-keyword kw">true</span>
+              <span class="ruby-identifier">server</span>.<span class="ruby-identifier">shutdown</span>(<span class="ruby-value">2</span>)
+
+            <span class="ruby-keyword kw">elsif</span> (<span class="ruby-identifier">text</span>.<span class="ruby-identifier">match</span>(<span class="ruby-regexp re">/^get count/i</span>))
+
+              <span class="ruby-ivar">@log</span>.<span class="ruby-identifier">debug</span>(<span class="ruby-value str">&quot;Writing count to client...&quot;</span>)
+
+              <span class="ruby-keyword kw">begin</span>
+                <span class="ruby-identifier">$count_mutex</span>.<span class="ruby-identifier">synchronize</span> {
+                  <span class="ruby-identifier">value</span> =<span class="ruby-node">&quot;#{$count}\n&quot;</span>
+
+                  <span class="ruby-keyword kw">if</span> <span class="ruby-identifier">$count</span> <span class="ruby-operator">&gt;=</span> (<span class="ruby-identifier">$options</span>.<span class="ruby-identifier">max_count</span> <span class="ruby-operator">-</span> (<span class="ruby-identifier">$options</span>.<span class="ruby-identifier">max_count</span><span class="ruby-operator">/</span><span class="ruby-value">3</span>))
+                    <span class="ruby-identifier">value</span> = <span class="ruby-identifier">value</span>.<span class="ruby-identifier">red</span>
+                  <span class="ruby-keyword kw">elsif</span> <span class="ruby-identifier">$count</span> <span class="ruby-operator">&gt;=</span> (<span class="ruby-identifier">$options</span>.<span class="ruby-identifier">max_count</span> <span class="ruby-operator">-</span> (<span class="ruby-identifier">$options</span>.<span class="ruby-identifier">max_count</span> <span class="ruby-operator">*</span> <span class="ruby-value">2</span><span class="ruby-operator">/</span><span class="ruby-value">3</span>))
+                    <span class="ruby-identifier">value</span> = <span class="ruby-identifier">value</span>.<span class="ruby-identifier">yellow</span>
+                  <span class="ruby-keyword kw">elsif</span> <span class="ruby-identifier">$count</span> <span class="ruby-operator">&lt;</span> (<span class="ruby-identifier">$options</span>.<span class="ruby-identifier">max_count</span> <span class="ruby-operator">-</span> (<span class="ruby-identifier">$options</span>.<span class="ruby-identifier">max_count</span> <span class="ruby-operator">*</span> <span class="ruby-value">2</span><span class="ruby-operator">/</span><span class="ruby-value">3</span>))
+                    <span class="ruby-identifier">value</span> = <span class="ruby-identifier">value</span>.<span class="ruby-identifier">green</span>
+                  <span class="ruby-keyword kw">end</span>
+                
+                  <span class="ruby-identifier">socket</span>.<span class="ruby-identifier">write</span>(<span class="ruby-identifier">value</span>)
+                  <span class="ruby-identifier">socket</span>.<span class="ruby-identifier">flush</span>
+
+                }
+                <span class="ruby-identifier">socket</span>.<span class="ruby-identifier">close</span>
+              <span class="ruby-keyword kw">end</span> <span class="ruby-keyword kw">if</span> <span class="ruby-keyword kw">not</span> <span class="ruby-identifier">socket</span>.<span class="ruby-identifier">closed?</span>
+
+            <span class="ruby-keyword kw">elsif</span> (<span class="ruby-identifier">text</span>.<span class="ruby-identifier">match</span>(<span class="ruby-regexp re">/^set count/i</span>))
+
+              <span class="ruby-ivar">@log</span>.<span class="ruby-identifier">debug</span>(<span class="ruby-value str">&quot;Setting count to value provide from client...&quot;</span>)
+
+              <span class="ruby-keyword kw">begin</span>
+                <span class="ruby-identifier">$count_mutex</span>.<span class="ruby-identifier">synchronize</span> {
+                  <span class="ruby-comment cmt">#                value = text.match(/[0-9].*/)[0]</span>
+                  <span class="ruby-keyword kw">if</span> (<span class="ruby-identifier">value</span> = <span class="ruby-identifier">text</span>.<span class="ruby-identifier">match</span>(<span class="ruby-regexp re">/[0-9].*/</span>)[<span class="ruby-value">0</span>]) <span class="ruby-operator">!=</span> <span class="ruby-value">0</span>
+                    <span class="ruby-identifier">$count</span> = <span class="ruby-identifier">value</span>.<span class="ruby-identifier">to_i</span>
+                    <span class="ruby-identifier">socket</span>.<span class="ruby-identifier">write</span>(<span class="ruby-node">&quot;count set to #{$count}\n&quot;</span>.<span class="ruby-identifier">green</span>)
+                  <span class="ruby-keyword kw">else</span>
+                    <span class="ruby-identifier">socket</span>.<span class="ruby-identifier">write</span>(<span class="ruby-node">&quot;count remains #{$count}\n&quot;</span>.<span class="ruby-identifier">red</span>)
+                  <span class="ruby-keyword kw">end</span>
+                }
+
+                <span class="ruby-identifier">socket</span>.<span class="ruby-identifier">flush</span>
+                <span class="ruby-identifier">socket</span>.<span class="ruby-identifier">close</span>
+              <span class="ruby-keyword kw">end</span> <span class="ruby-keyword kw">if</span> <span class="ruby-keyword kw">not</span> <span class="ruby-identifier">socket</span>.<span class="ruby-identifier">closed?</span>
+
+            <span class="ruby-keyword kw">elsif</span> (<span class="ruby-identifier">text</span>.<span class="ruby-identifier">match</span>(<span class="ruby-regexp re">/^get pool/i</span>))
+
+              <span class="ruby-ivar">@log</span>.<span class="ruby-identifier">debug</span>(<span class="ruby-value str">&quot;Writing worker pool status to client...&quot;</span>)
+
+              <span class="ruby-keyword kw">begin</span>
+                <span class="ruby-identifier">$pool</span>.<span class="ruby-identifier">status_of_workers</span>.<span class="ruby-identifier">each</span> {<span class="ruby-operator">|</span><span class="ruby-identifier">status</span><span class="ruby-operator">|</span>
+                  <span class="ruby-identifier">socket</span>.<span class="ruby-identifier">write</span>(<span class="ruby-node">&quot;#{status}\n&quot;</span>)
+                }
+                <span class="ruby-identifier">socket</span>.<span class="ruby-identifier">flush</span>
+                <span class="ruby-identifier">socket</span>.<span class="ruby-identifier">close</span>
+              <span class="ruby-keyword kw">end</span> <span class="ruby-keyword kw">if</span> <span class="ruby-keyword kw">not</span> <span class="ruby-identifier">socket</span>.<span class="ruby-identifier">closed?</span>
+            <span class="ruby-keyword kw">elsif</span> (<span class="ruby-identifier">text</span>.<span class="ruby-identifier">match</span>(<span class="ruby-regexp re">/^get connections/i</span>))
+            
+              <span class="ruby-ivar">@log</span>.<span class="ruby-identifier">debug</span>(<span class="ruby-value str">&quot;Writing connection count to client...&quot;</span>)
+            
+              <span class="ruby-keyword kw">begin</span>
+                <span class="ruby-identifier">socket</span>.<span class="ruby-identifier">write</span>(<span class="ruby-node">&quot;#{mutex.synchronize {connections}}\n&quot;</span>)
+                <span class="ruby-identifier">socket</span>.<span class="ruby-identifier">close</span>
+              <span class="ruby-keyword kw">end</span> <span class="ruby-keyword kw">if</span> <span class="ruby-keyword kw">not</span> <span class="ruby-identifier">socket</span>.<span class="ruby-identifier">closed?</span>
+            <span class="ruby-keyword kw">else</span>
+              <span class="ruby-ivar">@log</span>.<span class="ruby-identifier">error</span>(<span class="ruby-value str">&quot;Unexpected data!&quot;</span>)
+              <span class="ruby-ivar">@log</span>.<span class="ruby-identifier">error</span>(<span class="ruby-node">&quot;=========\n#{text}\n=========\n&quot;</span>)
+              <span class="ruby-identifier">socket</span>.<span class="ruby-identifier">close</span> <span class="ruby-keyword kw">if</span> <span class="ruby-keyword kw">not</span> <span class="ruby-identifier">socket</span>.<span class="ruby-identifier">closed?</span>
+            <span class="ruby-keyword kw">end</span>
+
+            <span class="ruby-ivar">@log</span>.<span class="ruby-identifier">debug</span>(<span class="ruby-value str">&quot;Connection handler done...&quot;</span>)
+            <span class="ruby-identifier">mutex</span>.<span class="ruby-identifier">synchronize</span> { <span class="ruby-identifier">connections</span> <span class="ruby-operator">-=</span> <span class="ruby-value">1</span> }
+          <span class="ruby-keyword kw">end</span>
+        <span class="ruby-keyword kw">rescue</span> <span class="ruby-constant">Errno</span><span class="ruby-operator">::</span><span class="ruby-constant">EPIPE</span> =<span class="ruby-operator">&gt;</span> <span class="ruby-identifier">e</span>
+          <span class="ruby-ivar">@log</span>.<span class="ruby-identifier">warn</span>(<span class="ruby-node">&quot;#{e.class} : #{e.message}&quot;</span>)
+        <span class="ruby-keyword kw">ensure</span>
+          <span class="ruby-identifier">socket</span>.<span class="ruby-identifier">close</span> <span class="ruby-keyword kw">if</span> <span class="ruby-keyword kw">not</span> <span class="ruby-identifier">socket</span>.<span class="ruby-identifier">closed?</span>
+        <span class="ruby-keyword kw">end</span>
+      <span class="ruby-keyword kw">end</span>
+    <span class="ruby-keyword kw">end</span>
+
+    <span class="ruby-ivar">@log</span>.<span class="ruby-identifier">debug</span>(<span class="ruby-node">&quot;Shutting down HoneyClient POSTFIX URL daemon on #{$options.port}...&quot;</span>)
+
+  <span class="ruby-keyword kw">rescue</span> <span class="ruby-constant">Errno</span><span class="ruby-operator">::</span><span class="ruby-constant">EINVAL</span> =<span class="ruby-operator">&gt;</span> <span class="ruby-identifier">e</span>
+    <span class="ruby-comment cmt"># swallow, this is thrown when a thread shutsdown the server and another</span>
+    <span class="ruby-comment cmt"># thread is listening for a new connection.</span>
+    
+  <span class="ruby-keyword kw">rescue</span> <span class="ruby-constant">Interrupt</span> =<span class="ruby-operator">&gt;</span> <span class="ruby-identifier">e</span>
+    <span class="ruby-ivar">@log</span>.<span class="ruby-identifier">info</span>(<span class="ruby-node">&quot;Shutting down HoneyClient POSTFIX URL daemon on #{$options.port}...&quot;</span>)
+    <span class="ruby-constant">SystemExit</span>.<span class="ruby-identifier">new</span>(<span class="ruby-value">0</span>)
+
+  <span class="ruby-keyword kw">rescue</span> <span class="ruby-constant">Exception</span> =<span class="ruby-operator">&gt;</span> <span class="ruby-identifier">e</span>
+    <span class="ruby-ivar">@log</span>.<span class="ruby-identifier">error</span>(<span class="ruby-value str">&quot;Something bad happended...&quot;</span>)
+    <span class="ruby-ivar">@log</span>.<span class="ruby-identifier">error</span>(<span class="ruby-node">&quot;#{e.class}: #{e.message}&quot;</span>)
+    <span class="ruby-ivar">@log</span>.<span class="ruby-identifier">error</span>(<span class="ruby-node">&quot;#{e.backtrace.join(&quot;\n&quot;)}&quot;</span>)
+    <span class="ruby-constant">SystemExit</span>.<span class="ruby-identifier">new</span>(<span class="ruby-value">1</span>) <span class="ruby-comment cmt">#TODO: get a better status code value</span>
+  <span class="ruby-keyword kw">end</span></pre>
+</body>
+</html>

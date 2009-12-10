@@ -121,7 +121,7 @@ module Utility
     else
       text = generate_text('text/html', max_paragraph_count, max_url_count)
       #LOG.debug("src html document = #{text}")
-      @manager.process_document_text(text, 'text/html', 'html', JODConvert_3_x::DOC_TYPES[doc_type], doc_type)
+      @ooo_conversion_srvc_client.process_document_text(text, 'text/html', 'html', JODConvert_3_x::DOC_TYPES[doc_type], doc_type)
     end
 
     #LOG.debug("#{doc}")

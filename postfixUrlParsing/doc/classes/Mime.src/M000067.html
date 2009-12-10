@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="iso-8859-1"?>
+<!DOCTYPE html 
+     PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+     "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+<html>
+<head>
+  <title>mime_shared_info (Mime)</title>
+  <meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1" />
+  <link rel="stylesheet" href="../.././rdoc-style.css" type="text/css" media="screen" />
+</head>
+<body class="standalone-code">
+  <pre><span class="ruby-comment cmt"># File lib/mime.rb, line 6</span>
+  <span class="ruby-keyword kw">def</span> <span class="ruby-identifier">mime_shared_info</span>(<span class="ruby-identifier">file_name</span>)
+    <span class="ruby-comment cmt">#Name              : Sample.doc</span>
+    <span class="ruby-comment cmt">#Type              : Regular</span>
+    <span class="ruby-comment cmt">#MIME type         : application/msword</span>
+    <span class="ruby-comment cmt">#Default app       : openoffice.org-writer.desktop</span>
+
+    <span class="ruby-identifier">info</span> = []
+
+    <span class="ruby-constant">IO</span>.<span class="ruby-identifier">popen</span>(<span class="ruby-node">&quot;gnomevfs-info \&quot;#{file_name}\&quot;&quot;</span>) { <span class="ruby-operator">|</span><span class="ruby-identifier">stdout</span><span class="ruby-operator">|</span>
+
+      <span class="ruby-keyword kw">if</span> (<span class="ruby-identifier">out</span> = <span class="ruby-identifier">stdout</span>.<span class="ruby-identifier">read</span>)
+        <span class="ruby-identifier">out</span>.<span class="ruby-identifier">split</span>(<span class="ruby-regexp re">/\n/</span>).<span class="ruby-identifier">each</span> {<span class="ruby-operator">|</span><span class="ruby-identifier">line</span><span class="ruby-operator">|</span>
+          <span class="ruby-identifier">pair</span> = <span class="ruby-identifier">line</span>.<span class="ruby-identifier">split</span>(<span class="ruby-value str">':'</span>)
+          <span class="ruby-identifier">name</span> = <span class="ruby-identifier">pair</span>[<span class="ruby-value">0</span>].<span class="ruby-identifier">strip!</span>;
+          <span class="ruby-keyword kw">if</span> (<span class="ruby-value str">'MIME type, Default app'</span>.<span class="ruby-identifier">include?</span>(<span class="ruby-identifier">name</span>))
+            <span class="ruby-identifier">info</span>.<span class="ruby-identifier">push</span>(<span class="ruby-identifier">pair</span>[<span class="ruby-value">1</span>].<span class="ruby-identifier">strip!</span>)
+            <span class="ruby-keyword kw">break</span> <span class="ruby-keyword kw">if</span> <span class="ruby-identifier">name</span> <span class="ruby-operator">==</span> <span class="ruby-value str">'Default app'</span>
+          <span class="ruby-keyword kw">end</span>
+        }
+      <span class="ruby-keyword kw">end</span>
+    }
+
+    <span class="ruby-keyword kw">return</span> <span class="ruby-identifier">info</span>
+  <span class="ruby-keyword kw">end</span></pre>
+</body>
+</html>

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="iso-8859-1"?>
+<!DOCTYPE html 
+     PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+     "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+<html>
+<head>
+  <title>listening? (OOoConversionSrvcClient)</title>
+  <meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1" />
+  <link rel="stylesheet" href="../.././rdoc-style.css" type="text/css" media="screen" />
+</head>
+<body class="standalone-code">
+  <pre><span class="ruby-comment cmt"># File lib/ooo_conversion_srvc_client.rb, line 154</span>
+  <span class="ruby-keyword kw">def</span> <span class="ruby-identifier">listening?</span>
+    <span class="ruby-keyword kw">begin</span>
+      <span class="ruby-identifier">client_socket</span> = <span class="ruby-constant">TCPSocket</span>.<span class="ruby-identifier">new</span>(<span class="ruby-constant">HOSTNAME</span>, <span class="ruby-constant">PORT</span>)
+      <span class="ruby-identifier">client_socket</span>.<span class="ruby-identifier">close</span>
+      <span class="ruby-constant">LOG</span>.<span class="ruby-identifier">debug</span>(<span class="ruby-value str">'OOoConversionSrvc is listening.'</span>)
+      <span class="ruby-keyword kw">return</span> <span class="ruby-keyword kw">true</span>
+    <span class="ruby-keyword kw">rescue</span> <span class="ruby-constant">Exception</span> =<span class="ruby-operator">&gt;</span> <span class="ruby-identifier">e</span>
+      <span class="ruby-constant">LOG</span>.<span class="ruby-identifier">debug</span>(<span class="ruby-node">&quot;#{e.class} : #{e.message}&quot;</span>)
+    <span class="ruby-keyword kw">end</span>
+
+    <span class="ruby-constant">LOG</span>.<span class="ruby-identifier">debug</span>(<span class="ruby-value str">'OOoConversionSrvc is not listening.'</span>)
+    <span class="ruby-keyword kw">return</span> <span class="ruby-keyword kw">false</span>
+  <span class="ruby-keyword kw">end</span></pre>
+</body>
+</html>

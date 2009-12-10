@@ -22,7 +22,7 @@ class Logger
     file_name = ''
     line = ''
 
-    if /^(.+?):(\d+)(?::in `(.*)')?/ =~ caller(2).first
+    if /^(.+?):(\d+)(?::in `(.*)')?/ =~ caller(3).first
       file_name = File.basename(Regexp.last_match[1])
       line = Regexp.last_match[2].to_i
     end
