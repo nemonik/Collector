@@ -1,5 +1,13 @@
 #!/usr/local/bin/ruby19
 
+# == Synopsis
+#   Unit tests for the Java-baased OOo Conversion Service
+#
+# Author::    Michael Joseph Walsh (mailto:mjwalsh_n_o__s_p_a_m@mitre.org)
+# Copyright:: Copyright (c) 2009 The MITRE Corporation.  All Rights Reserved.
+# License::
+
+
 require "test/unit"
 require 'json'
 require 'socket'
@@ -18,7 +26,6 @@ class TestOOoConversionServer < Test::Unit::TestCase
 
     request = {}
 
-    request['outputFormat'] = 'text'
     request['outputFilename'] = '537aaf39-9416-80ac-ce45-0bd6ff531a88.txt'
     request['inputFilename'] = '537aaf39-9416-80ac-ce45-0bd6ff531a88.doc'
     request['inputBase64FileContents'] = [IO.read('/home/walsh/samples/537aaf39-9416-80ac-ce45-0bd6ff531a88.doc')].pack("m")
@@ -39,7 +46,7 @@ class TestOOoConversionServer < Test::Unit::TestCase
 
     puts "response in #{finished} seconds"
 
-    assert(!response['outputBase64FileContents'].nil?, true)
+    assert(((!response['outputBase64FileContents'].nil?)  && (response['msg'].downcase.index('success') != nil)), true)
     
   end
 
@@ -47,7 +54,6 @@ class TestOOoConversionServer < Test::Unit::TestCase
 
     request = {}
 
-    request['outputFormat'] = 'text'
     request['outputFilename'] = '/home/walsh/samples/537aaf39-9416-80ac-ce45-0bd6ff531a88.txt'
     request['inputFilename'] = '/home/walsh/samples/537aaf39-9416-80ac-ce45-0bd6ff531a88.doc'
     request['inputBase64FileContents'] = nil
@@ -68,7 +74,8 @@ class TestOOoConversionServer < Test::Unit::TestCase
 
     puts "response in #{finished} seconds"
 
-    assert(File.exists?('/home/walsh/samples/537aaf39-9416-80ac-ce45-0bd6ff531a88.txt'), true)
+    assert(((File.exists?('/home/walsh/samples/537aaf39-9416-80ac-ce45-0bd6ff531a88.txt')) && (response['msg'].downcase.index('success') != nil)), true)
 
   end
+
 end

@@ -1,5 +1,8 @@
 package org.mitre.honeyclient;
 
+import java.util.logging.Level;
+import java.util.logging.Logger;
+
 /**
  * A POJO used for JSON-based response
  *
@@ -18,6 +21,8 @@ public class Response {
         this.msg = msg;
         this.outputFilename = outputFilename;
         this.outputBase64FileContents = outputBase64FileContents;
+
+        Logger.getLogger(Response.class.getName()).log(Level.INFO, "Created: " + toString());
     }
 
     public String getMsg() {
@@ -44,5 +49,8 @@ public class Response {
         this.outputFilename = outputFilename;
     }
 
-
+    @Override
+    public String toString() {
+        return "Response [" + "msg=" + (msg == null ? "null" : "\"" + msg + "\"") + ", " + "outputBase64FileContents=" +  (outputBase64FileContents == null ? "null" : "\"" + outputBase64FileContents + "\"") + ", " + "outputFilename=" + (outputFilename == null ? "null" : "\"" + outputFilename + "\"") + "]";
+    }
 }

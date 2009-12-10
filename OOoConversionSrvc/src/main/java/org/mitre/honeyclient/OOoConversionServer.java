@@ -153,6 +153,8 @@ public class OOoConversionServer {
             configuration.setTemplateProfileDir(new File(officeProfileParam));
         }
 
+        killOfficeDaemon(false);
+
         officeManager = configuration.buildOfficeManager();
 
         boolean retry = true;
@@ -165,25 +167,7 @@ public class OOoConversionServer {
                 // little bugger failed to start for whatever reason
                 Logger.getLogger(WorkerThread.class.getName()).log(Level.SEVERE, null, e);
 
-                Process p = Runtime.getRuntime().exec("killall office");
-
-                String s = null;
-
-                BufferedReader stdInput = new BufferedReader(new InputStreamReader(p.getInputStream()));
-
-                BufferedReader stdError = new BufferedReader(new InputStreamReader(p.getErrorStream()));
-
-                // read the output from the command
-                System.out.println("Here is the standard output of the command:\n");
-                while ((s = stdInput.readLine()) != null) {
-                    System.out.println(s);
-                }
-
-                // read any errors from the attempted command
-                System.out.println("Here is the standard error of the command (if any):\n");
-                while ((s = stdError.readLine()) != null) {
-                    System.out.println(s);
-                }
+                killOfficeDaemon(false);
 
                 officeManager = configuration.buildOfficeManager();
                 
@@ -242,5 +226,30 @@ public class OOoConversionServer {
 
     public OfficeDocumentConverter getDocumentConverter() {
         return documentConverter;
+    }
+
+    public void killOfficeDaemon(boolean showCmdLineOutpout) throws IOException {
+
+        Process p = Runtime.getRuntime().exec("killall soffice.bin");
+
+        if (showCmdLineOutpout) {
+            String s = null;
+
+            BufferedReader stdInput = new BufferedReader(new InputStreamReader(p.getInputStream()));
+
+            BufferedReader stdError = new BufferedReader(new InputStreamReader(p.getErrorStream()));
+
+            // read the output from the command
+            System.out.println("Here is the standard output of the command:\n");
+            while ((s = stdInput.readLine()) != null) {
+                System.out.println(s);
+            }
+
+            // read any errors from the attempted command
+            System.out.println("Here is the standard error of the command (if any):\n");
+            while ((s = stdError.readLine()) != null) {
+                System.out.println(s);
+            }
+        }
     }
 }

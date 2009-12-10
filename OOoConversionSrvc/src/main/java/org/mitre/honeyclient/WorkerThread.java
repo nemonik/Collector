@@ -52,14 +52,15 @@ class WorkerThread extends Thread {
             int len;
             boolean cont = true;
 
-            while (cont && ((len = in.read(buf)) >= 0)) {
+            while (cont) {
+                len = in.read(buf);
                 buffer.append(new String(buf, 0, len));
                 if (buffer.charAt(buffer.length() - 1) == '}') {
                     cont = false;
                 }
-                //Logger.getLogger(WorkerThread.class.getName()).log(Level.INFO, "'" + new String(buf, 0, len) + "'");
-                //Logger.getLogger(WorkerThread.class.getName()).log(Level.INFO, Character.toString(buffer.charAt(buffer.length() - 1)));
-                //Logger.getLogger(WorkerThread.class.getName()).log(Level.INFO, Boolean.toString(cont));
+                Logger.getLogger(WorkerThread.class.getName()).log(Level.INFO, "read: '" + new String(buf, 0, len) + "'");
+                Logger.getLogger(WorkerThread.class.getName()).log(Level.INFO, "last charcted read: '" + Character.toString(buffer.charAt(buffer.length() - 1)) + "'");
+                Logger.getLogger(WorkerThread.class.getName()).log(Level.INFO, "continue reading on port: " + Boolean.toString(cont));
             }
 
             String text = buffer.toString();
@@ -70,7 +71,7 @@ class WorkerThread extends Thread {
 
             try {
 
-                Logger.getLogger(WorkerThread.class.getName()).log(Level.FINE, "request text : " + text);
+                Logger.getLogger(WorkerThread.class.getName()).log(Level.INFO, "request text : " + text);
 
                 request = server.getMapper().readValue(text, Request.class);
 
@@ -100,6 +101,8 @@ class WorkerThread extends Thread {
                     throw new RuntimeException("No Base64 encoded input file content, nor path provided with input filename.");
                 }
 
+                Logger.getLogger(WorkerThread.class.getName()).log(Level.INFO, "calling convert of " + inputFile.getPath() + " to " + outputFile.getPath());
+
                 server.getDocumentConverter().convert(inputFile, outputFile);
 
                 if (request.inputBase64FileContents != null) {
@@ -112,14 +115,16 @@ class WorkerThread extends Thread {
 
                     response = new Response("Success; output returned in Base64 format", request.getOutputFilename(), outputBase64encoded);
                 } else {
-
                     response = new Response("Success; output can found in the output file", request.getOutputFilename(), null);
                 }
 
             } catch (RuntimeException e) {
+                Logger.getLogger(WorkerThread.class.getName()).log(Level.SEVERE, e.getMessage());
                 response = new Response(e.getMessage(), null, null);
+            } catch (java.io.EOFException e) {
+                //swallow
             } finally {
-                if (request.getInputBase64FileContents() != null) {
+                if ((request != null) && (request.getInputBase64FileContents() != null)) {
                     if (inputFile != null) {
                         inputFile.delete();
                     }
@@ -128,12 +133,13 @@ class WorkerThread extends Thread {
                         outputFile.delete();
                     }
                 }
+
+                server.getMapper().writeValue(out, response);
+                
             }
 
-            server.getMapper().writeValue(out, response);
-
         } catch (Exception e) {
-            Logger.getLogger(WorkerThread.class.getName()).log(Level.SEVERE, null, e);
+            Logger.getLogger(WorkerThread.class.getName()).log(Level.SEVERE, e.getMessage());
         } finally {
             try {
                 in.close();
@@ -144,5 +150,6 @@ class WorkerThread extends Thread {
                 Logger.getLogger(WorkerThread.class.getName()).log(Level.SEVERE, null, e);
             }
         }
+        Logger.getLogger(WorkerThread.class.getName()).log(Level.INFO, "Done");
     }
 }

@@ -10,7 +10,6 @@ package org.mitre.honeyclient;
  */
 public class Request {
 
-    String outputFormat;
     String outputFilename;
     String inputFilename;
     String inputBase64FileContents;
@@ -39,11 +38,8 @@ public class Request {
         this.outputFilename = outputFilename;
     }
 
-    public String getOutputFormat() {
-        return outputFormat;
-    }
-
-    public void setOutputFormat(String outputFormat) {
-        this.outputFormat = outputFormat;
+    @Override
+    public String toString() {
+        return "Request [" + "inputBase64FileContents=" + (inputBase64FileContents == null ? "null" : "\"" + inputBase64FileContents + "\"") + ", " + "inputFilename=" + (inputFilename == null ? "null" : "\"" + inputFilename + "\"") + ", " + "outputFilename=" + (outputFilename == null ? "null" : "\"" + outputFilename + "\"") + "]";
     }
 }
