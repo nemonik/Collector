@@ -103,6 +103,7 @@ class WorkerThread extends Thread {
 
                 Logger.getLogger(WorkerThread.class.getName()).log(Level.INFO, "calling convert of " + inputFile.getPath() + " to " + outputFile.getPath());
 
+                // TODO: convert using convert(File inputFile, File outputFile, DocumentFormat outputFormat), modify Request to handle
                 server.getDocumentConverter().convert(inputFile, outputFile);
 
                 if (request.inputBase64FileContents != null) {
