@@ -5,8 +5,8 @@
 #   turn ERROR messages red
 #
 # Author::    Michael Joseph Walsh (mailto:mjwalsh_n_o__s_p_a_m@mitre.org)
-# Copyright:: Copyright (c) 2009 The MITRE Corporation.  All Rights Reserved.
-# License::
+# Copyright:: Copyright (c) 2010 The MITRE Corporation.  All Rights Reserved.
+# License:: GNU GENERAL PUBLIC LICENSE
 
 require 'logger'
 require 'term/ansicolor'
@@ -21,8 +21,15 @@ class Logger
 
     file_name = ''
     line = ''
+    called_from = ''
 
-    if /^(.+?):(\d+)(?::in `(.*)')?/ =~ caller(3).first
+    if (caller(3).kind_of?(Array))
+      called_from = caller(3).first
+    else
+      called_from = caller[1]
+    end
+
+    if (/^(.+?):(\d+)(?::in `(.*)')?/ =~ called_from)
       file_name = File.basename(Regexp.last_match[1])
       line = Regexp.last_match[2].to_i
     end

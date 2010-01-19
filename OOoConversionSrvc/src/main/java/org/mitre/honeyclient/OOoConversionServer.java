@@ -13,7 +13,6 @@ import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.util.Properties;
 
-import org.artofsolving.jodconverter.OfficeDocumentConverter;
 import org.artofsolving.jodconverter.office.DefaultOfficeManagerConfiguration;
 import org.artofsolving.jodconverter.office.OfficeManager;
 
@@ -35,8 +34,8 @@ import org.artofsolving.jodconverter.office.OfficeException;
  * A service for MS Office and the like document conversion
  *
  * @author    Michael Joseph Walsh (mailto:mjwalsh_n_o__s_p_a_m@mitre.org)
- * Copyright:: Copyright (c) 2009 The MITRE Corporation.  All Rights Reserved.
- * License::
+ * Copyright:: Copyright (c) 2010 The MITRE Corporation.  All Rights Reserved.
+ * License:: GNU GENERAL PUBLIC LICENSE
  *
  */
 public class OOoConversionServer {
@@ -46,8 +45,10 @@ public class OOoConversionServer {
     public static final String PARAMETER_OFFICE_PROFILE = "officeProfile";
     public static final String PARAMETER_FILEUPLOAD_MAX_SIZE = "fileUploadMaxSize";
     public static final String PARAMETER_SERVER_PORT = "serverPort";
+    public static final String PARAMETER_TASK_EXECUTION_TIMEOUT = "taskExectionTimeout";
+
     private OfficeManager officeManager;
-    private OfficeDocumentConverter documentConverter;
+    private InsistOfficeDocumentConverter documentConverter;
     private int serverPort = 0;
     private int fileSizeMax = 0;
     private ServerSocket serverSocket = null;
@@ -74,6 +75,7 @@ public class OOoConversionServer {
         String officeProfileParam = properties.getProperty(PARAMETER_OFFICE_PROFILE);
         String serverPortParam = properties.getProperty(PARAMETER_SERVER_PORT);
         String fileSizeMaxParam = properties.getProperty(PARAMETER_FILEUPLOAD_MAX_SIZE);
+        String taskExectionTimeout = properties.getProperty(PARAMETER_TASK_EXECUTION_TIMEOUT);
 
         CommandLineParser parser = new PosixParser();
         Options options = new Options();
@@ -89,6 +91,8 @@ public class OOoConversionServer {
         options.addOption(OptionBuilder.withLongOpt(PARAMETER_OFFICE_HOME).withDescription("The home directory of OpenOffice.  Default is '" + officeHomeParam + "'.").hasArg().withArgName("PATH").create());
 
         options.addOption(OptionBuilder.withLongOpt(PARAMETER_OFFICE_PROFILE).withDescription("The profile directory to use for the OpenOffice daemon.  Default is '" + officeProfileParam + "'.").hasArg().withArgName("PATH").create());
+
+        options.addOption(OptionBuilder.withLongOpt(PARAMETER_TASK_EXECUTION_TIMEOUT).withDescription("The number of seconds a conversion is given between re-attempts.  Default is '" + taskExectionTimeout + "'.").hasArg().withArgName("INTEGER").create());
 
         CommandLine cmd = parser.parse(options, args);
 
@@ -153,6 +157,17 @@ public class OOoConversionServer {
             configuration.setTemplateProfileDir(new File(officeProfileParam));
         }
 
+        if (cmd.hasOption(PARAMETER_TASK_EXECUTION_TIMEOUT)) {
+            try {
+                configuration.setTaskExecutionTimeout(Integer.parseInt(cmd.getOptionValue(PARAMETER_TASK_EXECUTION_TIMEOUT)));
+            } catch (Exception e) {
+                throw new RuntimeException(
+                        "taskExecutionTimeout must be an integer value.");
+            }
+        } else {
+            configuration.setTaskExecutionTimeout(Integer.parseInt(taskExectionTimeout));
+        }
+
         killOfficeDaemon(false);
 
         officeManager = configuration.buildOfficeManager();
@@ -174,7 +189,7 @@ public class OOoConversionServer {
             }
         }
 
-        documentConverter = new OfficeDocumentConverter(officeManager);
+        documentConverter = new InsistOfficeDocumentConverter(officeManager);
 
         mapper = new ObjectMapper();
 
@@ -224,7 +239,7 @@ public class OOoConversionServer {
         return fileSizeMax;
     }
 
-    public OfficeDocumentConverter getDocumentConverter() {
+    public InsistOfficeDocumentConverter getDocumentConverter() {
         return documentConverter;
     }
 

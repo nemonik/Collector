@@ -4,8 +4,8 @@
 #   A daemon to parse URLs from emails pulled off a socket
 #
 # Author::    Michael Joseph Walsh (mailto:mjwalsh_n_o__s_p_a_m@mitre.org)
-# Copyright:: Copyright (c) 2009 The MITRE Corporation.  All Rights Reserved.
-# License::
+# Copyright:: Copyright (c) 2010 The MITRE Corporation.  All Rights Reserved.
+# License:: GNU GENERAL PUBLIC LICENSE
 
 $LOAD_PATH << File.dirname(__FILE__)  # hack for now to pick up my Compression module
 
@@ -38,6 +38,8 @@ require 'ooo_conversion_srvc_client'
 require 'mime'
 require 'SysVIPC'
 require 'inotify'
+require "redis"
+require 'digest/md5'
 
 include SysVIPC
 include Daemonize
@@ -78,6 +80,8 @@ class UrlParsingSrvc
       @recipients = []
       @links = []
       @x_count = nil # used inconjunction with Send_Email.rb script.
+
+      @db = Redis.new
 
     end
 
@@ -151,6 +155,32 @@ class UrlParsingSrvc
     end
 
     private
+
+    def md5sum(file_name)
+      if File.exists?(file_name)
+        Digest::MD5.hexdigest(IO.read(file_name))
+      end
+    end
+
+    def urls_from_db(checksum)
+      urls = @db.list_range(checksum, 0, -1)
+
+      @links = @links + urls
+
+      LOG.debug(" => returning #{urls} from db for #{checksum}".blue) # if $options.verbose
+
+      urls
+    end
+
+    def urls_to_db(checksum, urls)
+      LOG.debug(" => db storing #{urls} for #{checksum}".blue) if $options.verbose
+
+      @db.delete checksum
+
+      urls.each { |url|
+        @db.push_tail checksum, url
+      }
+    end
 
     # Record the error for posterity
     def record_error(e)
@@ -252,12 +282,14 @@ class UrlParsingSrvc
               file_name = File.join(folder_name, header['Content-Type'].chomp.split(/;\s*/)[1].split(/\s*=\s*/)[1].gsub(/\"/, ""))
 
               file = File.new(file_name, 'w')
-              file.syswrite(doc.unpack('m')[0]) # base64 decode and write out
+              file.syswrite(base_64_decode = doc.unpack('m')[0]) # base64 decode and write out
               file.close
 
               begin
                 #Timeout::timeout($options.timeout) {
-                process_file(file_name)
+
+                checksum = Digest::MD5.hexdigest(base_64_decode)
+                urls_to_db(checksum, process_file(file_name)) if urls_from_db(checksum).empty?
                 #}
                 #rescue Timeout::Error
                 #
@@ -292,11 +324,19 @@ class UrlParsingSrvc
     end
 
     # Process the file
-    def process_file(file_name)
+    def process_file(file_name, part_of_archive = false)
+
+      return_links = []
 
       LOG.debug(" => writing file #{file_name}...")
 
       info = mime_shared_info(file_name)
+
+      checksum = md5sum(file_name)
+      if (part_of_archive)
+        urls = urls_from_db(checksum)
+        return urls unless urls.empty?
+      end
 
       LOG.debug(" => info = #{info}")
 
@@ -306,32 +346,33 @@ class UrlParsingSrvc
           out = stdout.read
         }
 
-        get_links_with_uri(out)
+        return_links = get_links_with_uri(out)
 
       elsif ('application/rtf, text/plain, text/csv'.include?(info[0]))
-        get_links_with_uri(File.open(file_name).read)
+         return_links = get_links_with_uri(File.open(file_name).read)
 
       elsif ('text/html, application/xml'.include?(info[0]))
-        get_links(File.open(file_name).read)
+         return_links = get_links(File.open(file_name).read)
 
       elsif (info[0] == 'application/zip')
-        process_compressed(file_name, 'application/zip')
+         return_links = process_compressed(file_name, 'application/zip')
 
       elsif ('application/x-compressed-tar, application/x-gzip'.include?(info[0]) || info[0].include?('application/x-gz'))
-        process_compressed(file_name, 'application/x-gzip')
+         return_links = process_compressed(file_name, 'application/x-gzip')
 
       elsif (info[0].include?('application/x-bz'))
-        process_compressed(file_name, 'application/x-bzip')
+         return_links = process_compressed(file_name, 'application/x-bzip')
 
       elsif (info[0] == 'application/x-tar')
-        process_compressed(file_name, 'application/x-tar')
+         return_links = process_compressed(file_name, 'application/x-tar')
 
       elsif (info[1].include?('openoffice.org-calc'))
         # calc/excel docs need to first be converted to a csv, then
         # the urls pulled from
+
         csv_file_name = temp_file(file_name, 'csv')
 
-        get_links_with_uri(File.open(csv_file_name).read) if @ooo_conversion_srvc_client.process_office_file(file_name, csv_file_name)
+        return_links = get_links_with_uri(File.open(csv_file_name).read) if @ooo_conversion_srvc_client.process_office_file(file_name, csv_file_name)
 
       elsif (info[1].include?('openoffice.org-impress'))
         # presentation/powerpoint docs cannot be convert straight away, but
@@ -348,21 +389,26 @@ class UrlParsingSrvc
             out = stdout.read
           }
 
-          get_links_with_uri(out)
+           return_links = get_links_with_uri(out)
         end
 
       elsif (info[1].include?('openoffice'))
 
         html_file_name = temp_file(file_name, 'html')
+
         html = File.open(html_file_name).read if @ooo_conversion_srvc_client.process_office_file(file_name, html_file_name)
 
         LOG.debug(" => service returned : #{html}") if $options.verbose
 
-        get_links(html)
+        return_links = get_links(html)
 
       else
         raise UnsupportedDocumentType.new("Unhandled file type of '#{info}'.")
       end
+
+      urls_to_db(checksum, return_links) if part_of_archive && !return_links.empty?
+
+      return_links
 
     rescue Exception => e
       record_error(e)
@@ -391,6 +437,8 @@ class UrlParsingSrvc
     # Process the compressed file using a particular compression
     def process_compressed(file_name, compression)
 
+      return_links = []
+
       dst = File.dirname(file_name)
 
       LOG.debug(" => processing #{compression} compressed #{file_name}...")
@@ -417,9 +465,11 @@ class UrlParsingSrvc
       Find.find(dst) { |contents|
         if File.file? contents
           LOG.debug(" => from #{File.basename(file_name)}, processing #{contents}")
-          process_file(contents)
+          return_links = return_links + process_file(contents, true)
         end
       }
+
+      return_links
     rescue Exception => e
       record_error(e)
     end
@@ -603,20 +653,22 @@ class UrlParsingSrvc
       ic = Iconv.new("#{text.encoding.name}//IGNORE", "#{text.encoding.name}")
       text = ic.iconv(text + ' ')[0..-2]
 
-      tmp_links = []
+      return_links = []
 
       if ((!text.nil?) && (!text.strip.empty?))
         URI.extract(text, $options.uri_schemes) {|url|
           url = url.gsub(/\/$/,'').gsub(/\)$/, '').gsub(/\>/,'') #TODO: need a better regex
-          tmp_links.push(url)
+          return_links.push(url)
         }
 
-        LOG.debug(" => URI adds #{tmp_links} containing #{tmp_links.size} URLs to count")
+        LOG.debug(" => URI adds #{return_links} containing #{return_links.size} URLs to count")
 
-        @links = @links + tmp_links
+        @links = @links + return_links
       else
         LOG.debug(' => text is empty')
       end
+
+      return_links
     rescue Exception => e
       record_error(e)
     end
@@ -624,13 +676,13 @@ class UrlParsingSrvc
     # Get the links from the text using the Hpricot XML/HTML parser
     def get_links_with_hpricot(text)
 
+      return_links = []
+
       if ((!text.nil?) && (!text.strip.empty?))
         # the version of hpricot I developed against
         # is not attribute case insensitive
         text = text.gsub(/\sHREF/, ' href')
         text = text.gsub(/\sSRC/, ' src')
-
-        tmp_links = []
 
         # parse HTML content after fixing up content
         html = Hpricot(text, :fixup_tags => true)
@@ -639,7 +691,7 @@ class UrlParsingSrvc
         html.search('//a').map { |href|
           if (href['href'] != nil)
             url = URI.extract(href['href'], $options.uri_schemes)[0]
-            tmp_links.push(url.gsub(/\/$/,'')) if url
+            return_links.push(url.gsub(/\/$/,'')) if url
           end
         }
 
@@ -647,14 +699,16 @@ class UrlParsingSrvc
         html.search('//img').map { |img|
           if (img['src'] != nil)
             url = URI.extract(img['src'], $options.uri_schemes)[0]
-            tmp_links.push(url.gsub(/\/$/,''))  if url
+            return_links.push(url.gsub(/\/$/,''))  if url
           end
         }
 
-        LOG.debug(" => hpricot adds #{tmp_links} containing #{tmp_links.size} URLs to count")
+        LOG.debug(" => hpricot adds #{return_links} containing #{return_links.size} URLs to count")
 
-        @links = @links + tmp_links
+        @links = @links + return_links
       end
+
+      return_links
     rescue Exception => e
       record_error(e)
     end
@@ -662,15 +716,16 @@ class UrlParsingSrvc
     # Get the links from the text using the Nokogiri XML/HTML parser
     def get_links_with_nokogiri(text)
 
+      return_links = []
+
       if ((!text.nil?) && (!text.strip.nil?))
         html = Nokogiri::HTML(text)
-        tmp_links = []
 
         # pull URLs from anchor tags
         html.xpath('//a').map { |href|
           if (href['href'] != nil)
             url = URI.extract(href['href'], $options.uri_schemes)[0]
-            tmp_links.push(url.gsub(/\/$/,'')) if url
+            return_links.push(url.gsub(/\/$/,'')) if url
           end
         }
 
@@ -679,14 +734,16 @@ class UrlParsingSrvc
           if (img['src'] != nil)
             url = URI.extract(img['src'], $options.uri_schemes)[0]
             LOG.debug("  src url is #{url}")
-            tmp_links.push(url.gsub(/\/$/,''))  if url
+            return_links.push(url.gsub(/\/$/,''))  if url
           end
         }
 
-        LOG.debug(" => nokogiri adds #{tmp_links} containing #{tmp_links.size} URLs to count")
+        LOG.debug(" => nokogiri adds #{return_links} containing #{return_links.size} URLs to count")
 
-        @links = @links + tmp_links
+        @links = @links + return_links
       end
+
+      return_links
     rescue Exception => e
       record_error(e)
     end
@@ -813,7 +870,7 @@ class UrlParsingSrvc
 
           @connections_mutex.synchronize { connections += 1 }
 
-          puts "Handling connection from #{socket.peeraddr[2]}:#{socket.peeraddr[1]}...\n"
+          LOG.info("Handling connection from #{socket.peeraddr[2]}:#{socket.peeraddr[1]}...")
 
           if (socket.peeraddr[2].match(server_hostname))
             text = socket.read if not socket.closed?
@@ -845,16 +902,19 @@ class UrlParsingSrvc
               LOG.debug("Writing count to client...")
 
               begin
+
+                value = 0
+                
                 @count_mutex.synchronize {
                   value = @count
                 }
 
                 if value >= ($options.max_count - ($options.max_count/3))
-                  value = vlaue.red
+                  value = "#{value}".red
                 elsif value >= ($options.max_count - ($options.max_count * 2/3))
-                  value = value.yellow
+                  value = "#{value}".yellow
                 elsif value < ($options.max_count - ($options.max_count * 2/3))
-                  value = value.green
+                  value = "#{value}".green
                 end
 
                 socket.write(value)
@@ -913,6 +973,8 @@ class UrlParsingSrvc
             LOG.debug("Connection handler done...")
           end
         rescue Errno::EPIPE => e
+          puts "#{e.class} : #{e.message}\n"
+          puts "calling log.warn"
           LOG.warn("#{e.class} : #{e.message}")
         ensure
           socket.close unless socket.closed?

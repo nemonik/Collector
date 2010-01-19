@@ -3,8 +3,8 @@
 #   A module of shared methods used for testing purposes
 #
 # Author::    Michael Joseph Walsh (mailto:mjwalsh_n_o__s_p_a_m@mitre.org)
-# Copyright:: Copyright (c) 2009 The MITRE Corporation.  All Rights Reserved.
-# License::
+# Copyright:: Copyright (c) 2010 The MITRE Corporation.  All Rights Reserved.
+# License:: GNU GENERAL PUBLIC LICENSE
 
 require 'logger_patch'
 require 'lorem'

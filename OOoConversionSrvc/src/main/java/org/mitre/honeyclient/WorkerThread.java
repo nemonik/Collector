@@ -20,8 +20,8 @@ import org.apache.commons.io.FilenameUtils;
  * A worker thread for processing connections.
  *
  * @author    Michael Joseph Walsh (mailto:mjwalsh_n_o__s_p_a_m@mitre.org)
- * Copyright:: Copyright (c) 2009 The MITRE Corporation.  All Rights Reserved.
- * License::
+ * Copyright:: Copyright (c) 2010 The MITRE Corporation.  All Rights Reserved.
+ * License:: GNU GENERAL PUBLIC LICENSE
  * 
  */
 class WorkerThread extends Thread {
@@ -37,7 +37,7 @@ class WorkerThread extends Thread {
     @Override
     public void run() {
 
-        Logger.getLogger(WorkerThread.class.getName()).log(Level.INFO, "Accepted a new connection");
+        Logger.getLogger(WorkerThread.class.getName()).log(Level.FINEST, getName() + " accepted a new connection");
 
         byte[] buf = new byte[1024];
         StringBuffer buffer = new StringBuffer();
@@ -58,9 +58,9 @@ class WorkerThread extends Thread {
                 if (buffer.charAt(buffer.length() - 1) == '}') {
                     cont = false;
                 }
-                Logger.getLogger(WorkerThread.class.getName()).log(Level.INFO, "read: '" + new String(buf, 0, len) + "'");
-                Logger.getLogger(WorkerThread.class.getName()).log(Level.INFO, "last charcted read: '" + Character.toString(buffer.charAt(buffer.length() - 1)) + "'");
-                Logger.getLogger(WorkerThread.class.getName()).log(Level.INFO, "continue reading on port: " + Boolean.toString(cont));
+                Logger.getLogger(WorkerThread.class.getName()).log(Level.FINEST, getName() + " read: '" + new String(buf, 0, len) + "'");
+                Logger.getLogger(WorkerThread.class.getName()).log(Level.FINEST, getName() + " last charcted read: '" + Character.toString(buffer.charAt(buffer.length() - 1)) + "'");
+                Logger.getLogger(WorkerThread.class.getName()).log(Level.FINEST, getName() + " continue reading on port: " + Boolean.toString(cont));
             }
 
             String text = buffer.toString();
@@ -71,7 +71,7 @@ class WorkerThread extends Thread {
 
             try {
 
-                Logger.getLogger(WorkerThread.class.getName()).log(Level.INFO, "request text : " + text);
+                Logger.getLogger(WorkerThread.class.getName()).log(Level.FINEST, getName() + " request text : " + text);
 
                 request = server.getMapper().readValue(text, Request.class);
 
@@ -101,10 +101,13 @@ class WorkerThread extends Thread {
                     throw new RuntimeException("No Base64 encoded input file content, nor path provided with input filename.");
                 }
 
-                Logger.getLogger(WorkerThread.class.getName()).log(Level.INFO, "calling convert of " + inputFile.getPath() + " to " + outputFile.getPath());
+                Logger.getLogger(WorkerThread.class.getName()).log(Level.FINEST, "calling convert of " + inputFile.getPath() + " to " + outputFile.getPath());
 
                 // TODO: convert using convert(File inputFile, File outputFile, DocumentFormat outputFormat), modify Request to handle
                 server.getDocumentConverter().convert(inputFile, outputFile);
+
+                if (!outputFile.exists())
+                    throw new RuntimeException("The file could not be converted.");
 
                 if (request.inputBase64FileContents != null) {
                     byte[] outputFileBytes = new byte[(int) outputFile.length()];
@@ -120,9 +123,9 @@ class WorkerThread extends Thread {
                 }
 
             } catch (RuntimeException e) {
-                Logger.getLogger(WorkerThread.class.getName()).log(Level.SEVERE, e.getMessage());
+                Logger.getLogger(WorkerThread.class.getName()).log(Level.SEVERE, e.toString());
                 response = new Response(e.getMessage(), null, null);
-            } catch (java.io.EOFException e) {
+            //} catch (java.io.EOFException e) {
                 //swallow
             } finally {
                 if ((request != null) && (request.getInputBase64FileContents() != null)) {
@@ -136,10 +139,11 @@ class WorkerThread extends Thread {
                 }
 
                 server.getMapper().writeValue(out, response);
-                
+
             }
 
         } catch (Exception e) {
+            // catch everything else
             Logger.getLogger(WorkerThread.class.getName()).log(Level.SEVERE, e.getMessage());
         } finally {
             try {
@@ -151,6 +155,6 @@ class WorkerThread extends Thread {
                 Logger.getLogger(WorkerThread.class.getName()).log(Level.SEVERE, null, e);
             }
         }
-        Logger.getLogger(WorkerThread.class.getName()).log(Level.INFO, "Done");
+        Logger.getLogger(WorkerThread.class.getName()).log(Level.FINEST, getName() + " done");
     }
 }
